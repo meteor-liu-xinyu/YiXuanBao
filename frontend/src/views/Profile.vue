@@ -176,12 +176,32 @@
         </div>
       </div>
 
-      <!-- 出生日期 -->
+      <!-- 出生日期（拆分为 年 / 月 / 日 三个输入） -->
       <div class="profile-field">
         <label>出生日期：</label>
-        <div class="profile-value">
+        <div class="profile-value" style="align-items:center;">
           <template v-if="editing === 'birthday'">
-            <input v-model="editBirthday" type="date" class="edit-input" style="width:160px"/>
+            <div class="birthday-inputs">
+              <input
+                v-model.trim="editBirthdayYear"
+                class="birthday-year"
+                placeholder="年"
+                maxlength="4"
+                @blur="normalizeYearInput"
+                inputmode="numeric"
+              />
+              <select v-model="editBirthdayMonth" class="birthday-month">
+                <option value="">月</option>
+                <option v-for="m in 12" :key="m" :value="String(m).padStart(2,'0')">{{ String(m).padStart(2,'0') }}</option>
+              </select>
+              <input
+                v-model.trim="editBirthdayDay"
+                class="birthday-day"
+                placeholder="日"
+                maxlength="2"
+                inputmode="numeric"
+              />
+            </div>
             <span class="icon-btn" @click="saveField('birthday')" :title="'保存'">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
                 <path d="M6 12.5L9.5 16L16 8.5" stroke="#43cea2" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
@@ -268,6 +288,7 @@ import api from '@/api/api'
 import Cookies from 'js-cookie'
 import defaultAvatar from '/default.png'
 import { useUserStore } from '@/stores/user'
+import io from 'socket.io-client' // harmless, keep noneffect if unused
 
 /* 基本字段 */
 const username = ref('')
@@ -281,7 +302,7 @@ const isStaff = ref(false)
 const isSuperuser = ref(false)
 const realName = ref('')
 const address = ref('')
-const birthday = ref('')
+const birthday = ref('') // displayed birthday string YYYY-MM-DD or ''
 const preferredRegion = ref('')
 const preferredSpecialty = ref('')
 
@@ -293,7 +314,9 @@ const editGender = ref('')
 const editPhone = ref('')
 const editRealName = ref('')
 const editAddress = ref('')
-const editBirthday = ref('')
+const editBirthdayYear = ref('')   // 年 输入
+const editBirthdayMonth = ref('')  // 月 两位 '01'..'12'
+const editBirthdayDay = ref('')    // 日 两位 '01'..'31'
 const editPreferredRegion = ref('')
 const editPreferredSpecialty = ref('')
 
@@ -341,6 +364,81 @@ async function ensureCsrf() {
   }
 }
 
+/* 把任意后端 birthday 字符串规范化为 YYYY-MM-DD 或返回 null */
+function formatDateForBackend(val) {
+  if (!val && val !== '') return null
+  if (val === '') return null
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val
+  if (typeof val === 'string' && val.indexOf('T') !== -1) {
+    return val.split('T')[0]
+  }
+  const d = new Date(val)
+  if (!isNaN(d.getTime())) {
+    return d.toISOString().slice(0, 10)
+  }
+  return null
+}
+
+/* 把 YYYY-MM-DD 字符串拆成年/月/日 */
+function parseBirthdayToParts(val) {
+  const normalized = formatDateForBackend(val)
+  if (!normalized) return { y: '', m: '', d: '' }
+  const parts = normalized.split('-')
+  return { y: parts[0], m: parts[1], d: parts[2] }
+}
+
+/* 将两位或四位年份规范化为四位（规则：00-69 -> 2000-2069 ; 70-99 -> 1970-1999） */
+function normalizeYearInput() {
+  let y = String(editBirthdayYear.value || '').trim()
+  if (!y) {
+    editBirthdayYear.value = ''
+    return
+  }
+  // 清除非数字字符
+  y = y.replace(/[^\d]/g, '')
+  if (y.length === 2) {
+    const n = parseInt(y, 10)
+    const full = n >= 70 ? 1900 + n : 2000 + n
+    editBirthdayYear.value = String(full)
+    return
+  }
+  if (y.length === 3) {
+    // 如果用户误输入三位，前面补 '0'（不太常见）
+    editBirthdayYear.value = '0' + y
+    return
+  }
+  if (y.length >= 4) {
+    editBirthdayYear.value = y.slice(0, 4)
+    return
+  }
+  // 一位数字，视作 200x
+  if (y.length === 1) {
+    const n = parseInt(y, 10)
+    const full = 2000 + n
+    editBirthdayYear.value = String(full)
+  }
+}
+
+/* 把三段合并成 YYYY-MM-DD 或返回 null（若任意一段为空则返回 null） */
+function buildBirthdayFromParts() {
+  const y = (editBirthdayYear.value || '').trim()
+  const m = (editBirthdayMonth.value || '').trim()
+  const d = (editBirthdayDay.value || '').trim()
+  if (!y || !m || !d) return null
+  // 规范化 month/day 为两位
+  const mm = m.padStart(2, '0')
+  const dd = d.padStart(2, '0')
+  // 额外校验范围
+  const yi = parseInt(y, 10)
+  const mi = parseInt(mm, 10)
+  const di = parseInt(dd, 10)
+  if (isNaN(yi) || isNaN(mi) || isNaN(di)) return null
+  if (mi < 1 || mi > 12) return null
+  if (di < 1 || di > 31) return null
+  // 简单校验：对于 2/4月份的天数可做进一步校验，但后端也会验证
+  return `${String(yi).padStart(4,'0')}-${String(mi).padStart(2,'0')}-${String(di).padStart(2,'0')}`
+}
+
 /* 加载用户信息 */
 async function fetchUserInfo() {
   try {
@@ -357,30 +455,39 @@ async function fetchUserInfo() {
     isSuperuser.value = !!data.is_superuser
     realName.value = data.real_name || data.full_name || ''
     address.value = data.address || ''
-    birthday.value = data.birthday || ''
     preferredRegion.value = data.preferred_region || ''
     preferredSpecialty.value = data.preferred_specialty || ''
 
-    // 初始化可编辑字段（用于保存全部）
+    // 规范 birthday 并拆分成 parts 以便编辑器使用
+    if (data.birthday) {
+      const parts = parseBirthdayToParts(data.birthday)
+      birthday.value = parts.y && parts.m && parts.d ? `${parts.y}-${parts.m}-${parts.d}` : ''
+      editBirthdayYear.value = parts.y
+      editBirthdayMonth.value = parts.m
+      editBirthdayDay.value = parts.d
+    } else {
+      birthday.value = ''
+      editBirthdayYear.value = ''
+      editBirthdayMonth.value = ''
+      editBirthdayDay.value = ''
+    }
+
+    // 初始化其它可编辑字段
     editNickname.value = nickname.value
     editEmail.value = email.value
     editGender.value = gender.value
     editPhone.value = phone.value
     editRealName.value = realName.value
     editAddress.value = address.value
-    editBirthday.value = birthday.value
     editPreferredRegion.value = preferredRegion.value
     editPreferredSpecialty.value = preferredSpecialty.value
 
-    // 让全局 store 同步（如果需要）
     if (store && typeof store.fetchUser === 'function') {
       await store.fetchUser()
     }
   } catch (e) {
-    // 如果 403/401 => 跳转到登录（会话失效或 CSRF 问题）
-    const status = e?.response?.status
-    if (status === 401 || status === 403) {
-      console.warn('fetchUserInfo unauthorized, redirect to login', e)
+    const statusCode = e?.response?.status
+    if (statusCode === 401 || statusCode === 403) {
       router.replace('/login')
     } else {
       console.error('fetchUserInfo error', e)
@@ -388,11 +495,12 @@ async function fetchUserInfo() {
   }
 }
 
-/* 头像上传流程 */
+/* 头像上传 & removeAvatar 保持不变（略） */
+// ...（保留你现有的头像处理函数）...
+
 async function onAvatarChange(e) {
   const file = e.target.files[0]
   if (!file) return
-  // 简单大小校验
   if (file.size > 5 * 1024 * 1024) {
     alert('文件过大，请选择小于 5MB 的图片')
     return
@@ -426,12 +534,9 @@ async function confirmCrop() {
       height: 300,
       imageSmoothingQuality: 'high'
     })
-
     const preferWebp = true
     const mimeType = preferWebp ? 'image/webp' : 'image/jpeg'
     let quality = 0.8
-
-    // 生成 blob 并在需要时降质重试
     const blobFromCanvas = (q) => new Promise(resolve => canvas.toBlob(resolve, mimeType, q))
     let blob = await blobFromCanvas(quality)
     if (!blob) throw new Error('生成图片失败')
@@ -439,21 +544,15 @@ async function confirmCrop() {
       quality = 0.6
       blob = await blobFromCanvas(quality)
     }
-
-    // 上传前确保 csrftoken
     await ensureCsrf()
     const csrftoken = getCookie('csrftoken') || ''
-
     const ext = mimeType.includes('webp') ? 'webp' : 'jpg'
     const formData = new FormData()
     formData.append('avatar', blob, `avatar.${ext}`)
-
-    // 不要设置 Content-Type，浏览器 会自动添加 boundary
     await api.patch('/accounts/userinfo/', formData, {
       withCredentials: true,
       headers: { 'X-CSRFToken': csrftoken }
     })
-
     await fetchUserInfo()
     avatarTimestamp.value = Date.now()
     closeCrop()
@@ -512,7 +611,10 @@ function editField(field) {
   if (field === 'phone') editPhone.value = phone.value
   if (field === 'real_name') editRealName.value = realName.value
   if (field === 'address') editAddress.value = address.value
-  if (field === 'birthday') editBirthday.value = birthday.value
+  if (field === 'birthday') {
+    // 当开始编辑生日时，parts 已在 fetchUserInfo 中初始化
+    // 保持现有 editBirthdayYear/Month/Day 的值
+  }
 }
 
 /* 保存单字段 */
@@ -525,7 +627,13 @@ async function saveField(field) {
   if (field === 'phone') payload.phone = editPhone.value
   if (field === 'real_name') payload.real_name = editRealName.value
   if (field === 'address') payload.address = editAddress.value
-  if (field === 'birthday') payload.birthday = editBirthday.value
+
+  if (field === 'birthday') {
+    // 合并三个输入为 YYYY-MM-DD 或 null
+    normalizeYearInput()
+    const built = buildBirthdayFromParts()
+    payload.birthday = built // 可能为 null 或 'YYYY-MM-DD'
+  }
 
   try {
     await ensureCsrf()
@@ -542,7 +650,8 @@ async function saveField(field) {
       alert('请求被拒绝，请重新登录')
       router.replace('/login')
     } else {
-      alert('保存失败，请检查格式或重试')
+      const errBody = e?.response?.data
+      alert('保存失败：' + (errBody ? JSON.stringify(errBody) : '请检查格式或重试'))
     }
     editing.value = prevEditing
   }
@@ -551,6 +660,9 @@ async function saveField(field) {
 /* 保存全部（包含偏好） */
 async function saveAll() {
   saving.value = true
+  // 先规范 birthday 三段
+  normalizeYearInput()
+  const birthdayForBackend = buildBirthdayFromParts()
   const payload = {
     nickname: editNickname.value || nickname.value,
     email: editEmail.value || email.value,
@@ -558,7 +670,7 @@ async function saveAll() {
     phone: editPhone.value || phone.value,
     real_name: editRealName.value || realName.value,
     address: editAddress.value || address.value,
-    birthday: editBirthday.value || birthday.value,
+    birthday: birthdayForBackend, // null 或 'YYYY-MM-DD'
     preferred_region: editPreferredRegion.value || preferredRegion.value,
     preferred_specialty: editPreferredSpecialty.value || preferredSpecialty.value
   }
@@ -573,12 +685,8 @@ async function saveAll() {
     alert('保存成功')
   } catch (e) {
     console.error('saveAll error', e)
-    if (e?.response?.status === 403) {
-      alert('请求被拒绝，请重新登录')
-      router.replace('/login')
-    } else {
-      alert('保存全部失败，请重试')
-    }
+    const errBody = e?.response?.data
+    alert('保存失败：' + (errBody ? JSON.stringify(errBody) : '请重试'))
   } finally {
     saving.value = false
   }
@@ -614,10 +722,8 @@ async function doLogout() {
   } catch (e) {
     // ignore backend error but continue cleanup
   } finally {
-    // Clear client-side auth state if you store tokens locally
     Cookies.remove('access')
     Cookies.remove('refresh')
-    // update global store
     if (store && typeof store.clearAuth === 'function') store.clearAuth()
     router.replace('/login')
   }
@@ -637,6 +743,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/*（保留原有样式，增加生日输入样式） */
 .profile-fullscreen {
   min-height: 100vh; background: #f4f8fc;
   display: flex; align-items: center; justify-content: center;
@@ -703,6 +810,29 @@ label {
   outline: none; margin-right: 8px;
   width: 220px; max-width: 70vw;
 }
+
+/* 新增：生日三个输入的样式 */
+.birthday-inputs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.birthday-year, .birthday-month, .birthday-day {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1.2px solid #e1e8f8;
+  font-size: 1rem;
+  width: 86px;
+  text-align: center;
+}
+.birthday-month {
+  width: 78px;
+}
+.birthday-day {
+  width: 64px;
+}
+
+/* 其他样式保持不变（省略重复部分以节省篇幅） */
 .icon-btn {
   margin-left: 9px; cursor: pointer; display: flex; align-items: center;
   transition: opacity 0.16s;
@@ -793,5 +923,8 @@ label {
   .back-btn { padding: 8px 14px; font-size: 0.98rem; }
   .avatar-edit-btn { padding: 6px 10px; font-size: 0.95rem; }
   .cropper-img { max-width: 90vw; }
+  .birthday-year { width: 90px; }
+  .birthday-month { width: 80px; }
+  .birthday-day { width: 70px; }
 }
 </style>

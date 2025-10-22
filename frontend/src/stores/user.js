@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/api/api'
+import router from '@/router'
 
 function getCookie(name) {
   const match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)')
@@ -12,26 +13,40 @@ export const useUserStore = defineStore('user', () => {
   const avatar = ref('')
   const avatarTimestamp = ref(Date.now())
   const isAuthenticated = ref(false)
+  const isStaff = ref(false)
+  const isSuperuser = ref(false)
+  const isAdmin = ref(false) // 快捷标志：isStaff || isSuperuser
 
   function clearAuth() {
     username.value = ''
     avatar.value = ''
     avatarTimestamp.value = Date.now()
     isAuthenticated.value = false
+    isStaff.value = false
+    isSuperuser.value = false
+    isAdmin.value = false
   }
 
   async function fetchUser() {
     try {
       const res = await api.get('/accounts/userinfo/', { withCredentials: true })
-      if (res && res.status === 200 && res.data && res.data.username) {
-        username.value = res.data.username || ''
-        avatar.value = res.data.avatar || ''
+      if (res && res.status === 200 && res.data) {
+        const data = res.data
+        username.value = data.username || ''
+        avatar.value = data.avatar || ''
         isAuthenticated.value = true
+        // 后端需返回 is_staff / is_superuser 字段（UserSerializer中包含）
+        isStaff.value = !!data.is_staff
+        isSuperuser.value = !!data.is_superuser
+        isAdmin.value = isStaff.value || isSuperuser.value
+        return data
       } else {
         clearAuth()
+        return null
       }
     } catch (e) {
       clearAuth()
+      return null
     }
   }
 
@@ -74,12 +89,27 @@ export const useUserStore = defineStore('user', () => {
       // ignore; still clear client state
     } finally {
       clearAuth()
-      // 尝试本地删除 cookie（客户端补偿）
+      // 客户端补偿删除 cookie
       document.cookie = 'sessionid=; Path=/; Max-Age=0'
       document.cookie = 'csrftoken=; Path=/; Max-Age=0'
-      // 推荐在 logout UI 调用后做 router.replace('/login')
+      // 导航到登录页
+      try { router.replace('/login') } catch (err) { /* ignore */ }
     }
   }
 
-  return { username, avatar, avatarTimestamp, isAuthenticated, fetchUser, refreshAvatar, login, register, logout, clearAuth }
+  return {
+    username,
+    avatar,
+    avatarTimestamp,
+    isAuthenticated,
+    isStaff,
+    isSuperuser,
+    isAdmin,
+    fetchUser,
+    refreshAvatar,
+    login,
+    register,
+    logout,
+    clearAuth
+  }
 })

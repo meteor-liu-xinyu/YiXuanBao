@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import permissions, status
 from django.contrib.auth import authenticate, login, logout
 from django.db import transaction
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from .serializers import UserSerializer, UserUpdateSerializer
 from .models import User
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -14,6 +14,7 @@ from django.middleware.csrf import get_token
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from PIL import Image
 import io
+
 
 @method_decorator(ensure_csrf_cookie, name='dispatch')
 class GetCSRFTokenView(APIView):
@@ -88,69 +89,84 @@ class UserInfoView(APIView):
     支持：
       - 通过表单上传文件 avatar（multipart/form-data）
       - 通过 avatar=null 或 avatar='' 删除头像（前端可按此规则发送）
+    注意：
+      - 仅当请求体中明确包含 avatar 字段且其值为空('', 'null', 'None', None) 时才视作删除头像请求，
+        如果请求体完全没有 avatar 字段则不会删除原有头像。
+      - 上传文件优先于删除指示（如果同时上传文件，则以上传文件为准）。
     """
-    permission_classes = [permissions.IsAuthenticated]  # 要求登录
-    parser_classes = (MultiPartParser, FormParser)
+    permission_classes = [permissions.IsAuthenticated]
+    # 支持 JSON 与表单/文件上传
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
 
-    def get(self, request):
+    def get(self, request, *args, **kwargs):
         user = request.user
         serializer = UserSerializer(user, context={'request': request})
         return Response(serializer.data)
 
-    def patch(self, request):
+    def patch(self, request, *args, **kwargs):
         user = request.user
 
-        # 先处理前端可能发送的“删除头像”指示
-        # 前端可能发送 avatar: '', 'null', 'None' 等，统一处理为删除头像
-        avatar_flag = request.data.get('avatar', None)
+        # 判定前端是否明确请求删除头像：只有当请求体包含 avatar 字段且其值为空时才删除
         remove_avatar = False
-        if avatar_flag in ('', 'null', 'None') or avatar_flag is None and 'avatar' in request.data and request.data.get('avatar') in ('', 'null', 'None'):
-            # 如果确实明确想删除头像（注意：如果前端完全不包含 avatar 字段，这里不应该删除）
-            # 这里仅在 avatar 字段存在但为空时视为删除
-            if 'avatar' in request.data and (request.data.get('avatar') in ('', 'null', 'None') or request.data.get('avatar') is None):
-                remove_avatar = True
+        if 'avatar' in request.data and request.data.get('avatar') in ('', 'null', 'None', None):
+            remove_avatar = True
 
         with transaction.atomic():
-            serializer = UserUpdateSerializer(instance=user, data=request.data, partial=True, context={'request': request})
-            serializer.is_valid(raise_exception=True)
-
-            # 如果有文件上传，优先处理并可做服务器端压缩
-            new_avatar_file = None
+            # 先处理上传文件（若有上传文件，优先使用上传文件）
             upload_file = request.FILES.get('avatar')
+            new_avatar_file = None
+
             if upload_file:
                 try:
-                    # 使用 Pillow 压缩/缩放上传图片（生成 JPEG，quality 可调）
+                    # 使用 Pillow 对图片做基本处理并转换为 JPEG（如需保留原格式可调整）
                     img = Image.open(upload_file)
-                    img = img.convert('RGB')  # 保证为 RGB，便于保存为 JPEG
-                    # 缩放到最大 800px（根据需要调整），这里示例缩放为 300x300
+                    img = img.convert('RGB')
+                    # 缩放到最大 300x300（按需调整）
                     img.thumbnail((300, 300), Image.ANTIALIAS)
 
                     buffer = io.BytesIO()
                     img.save(buffer, format='JPEG', quality=85)
                     buffer.seek(0)
+                    size = buffer.getbuffer().nbytes
 
-                    new_file = InMemoryUploadedFile(
-                        buffer, 'avatar', upload_file.name, 'image/jpeg',
-                        buffer.getbuffer().nbytes, None
+                    new_avatar_file = InMemoryUploadedFile(
+                        buffer,               # file
+                        'avatar',             # field_name
+                        upload_file.name or 'avatar.jpg',  # name
+                        'image/jpeg',         # content_type
+                        size,                 # size
+                        None                  # charset
                     )
-                    new_avatar_file = new_file
                 except Exception:
-                    # 如果处理失败，回退使用原始文件（让 serializer 直接保存）
+                    # 如果压缩/转换失败，回退使用原始上传文件（确保文件指针回到开头）
+                    try:
+                        upload_file.seek(0)
+                    except Exception:
+                        pass
                     new_avatar_file = upload_file
 
-            # 如果前端明确要求删除头像
-            if remove_avatar and not upload_file:
-                # 直接清空 user.avatar 字段
-                user.avatar.delete(save=False)
-                user.avatar = None
-                user.save()
+            # 使用 serializer 验证并保存其它字段（partial update）
+            serializer = UserUpdateSerializer(instance=user, data=request.data, partial=True, context={'request': request})
+            serializer.is_valid(raise_exception=True)
 
-            # 调用 save：如果有 new_avatar_file，则通过 save(avatar=new_avatar_file) 传入
+            # 如果上传了新头像文件，则以上传文件为准覆盖保存
             if new_avatar_file:
                 serializer.save(avatar=new_avatar_file)
             else:
+                # 先保存其它字段
                 serializer.save()
+                # 如果前端明确请求删除头像（并且没有上传新文件），则删除存储的头像并清空字段
+                if remove_avatar:
+                    try:
+                        if getattr(user, 'avatar', None):
+                            user.avatar.delete(save=False)
+                        user.avatar = None
+                        user.save()
+                    except Exception:
+                        # 记录或忽略删除失败（按需改为 raise）
+                        pass
 
-            # 返回最新完整用户信息（avatar 已由 UserSerializer 返回绝对 URL）
+            # 确保从数据库刷新实例后序列化返回最新数据
+            user.refresh_from_db()
             out = UserSerializer(user, context={'request': request}).data
             return Response(out, status=status.HTTP_200_OK)
