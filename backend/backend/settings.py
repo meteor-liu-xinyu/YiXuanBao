@@ -110,11 +110,25 @@ REST_FRAMEWORK = {
     )
 }
 
+# 允许跨域凭证（开发）
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",  # 前端 dev server
+]
+
+# 让 Django 信任前端 origin（Django CSRF 的 origin 检查要求 scheme+host）
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+]
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # CORS 与 CSRF（开发）
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = True
 CSRF_COOKIE_NAME = "csrftoken"
+
+# cookie 设置（开发环境）
+SESSION_COOKIE_SAMESITE = 'Lax'  # 'Lax' 通常允许 top-level 导航携带 cookie；跨站 POST 可能受限
+SESSION_COOKIE_SECURE = False    # 开发时 false；生产用 https 时设为 True
+CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SECURE = False
-SESSION_COOKIE_SECURE = False

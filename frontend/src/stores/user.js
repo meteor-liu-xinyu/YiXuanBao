@@ -2,25 +2,36 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/api/api'
 
+function getCookie(name) {
+  const match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)')
+  return match ? decodeURIComponent(match.pop()) : ''
+}
+
 export const useUserStore = defineStore('user', () => {
-  const username = ref('未登录')
+  const username = ref('')
   const avatar = ref('')
   const avatarTimestamp = ref(Date.now())
   const isAuthenticated = ref(false)
 
+  function clearAuth() {
+    username.value = ''
+    avatar.value = ''
+    avatarTimestamp.value = Date.now()
+    isAuthenticated.value = false
+  }
+
   async function fetchUser() {
     try {
-      // GET accounts/userinfo/ 需后端返回 user + profile info
-      const res = await api.get('accounts/userinfo/')
-      if (res.status === 200 && res.data.username) {
-        username.value = res.data.username
+      const res = await api.get('/accounts/userinfo/', { withCredentials: true })
+      if (res && res.status === 200 && res.data && res.data.username) {
+        username.value = res.data.username || ''
         avatar.value = res.data.avatar || ''
         isAuthenticated.value = true
       } else {
-        isAuthenticated.value = false
+        clearAuth()
       }
     } catch (e) {
-      isAuthenticated.value = false
+      clearAuth()
     }
   }
 
@@ -30,29 +41,45 @@ export const useUserStore = defineStore('user', () => {
   }
 
   async function login(payload) {
-    // payload: { username, password }
-    const res = await api.post('accounts/login/', payload)
-    if (res.status === 200) {
-      await fetchUser()
-      return true
+    try {
+      const csrftoken = getCookie('csrftoken')
+      const headers = {}
+      if (csrftoken) headers['X-CSRFToken'] = csrftoken
+      const res = await api.post('/accounts/login/', payload, { withCredentials: true, headers })
+      if (res && (res.status === 200 || res.status === 201)) {
+        await fetchUser()
+        return true
+      }
+      return false
+    } catch (e) {
+      clearAuth()
+      return false
     }
-    return false
   }
 
   async function register(payload) {
-    const res = await api.post('accounts/register/', payload)
-    return res
+    const csrftoken = getCookie('csrftoken')
+    const headers = {}
+    if (csrftoken) headers['X-CSRFToken'] = csrftoken
+    return api.post('/accounts/register/', payload, { withCredentials: true, headers })
   }
 
   async function logout() {
-    await api.post('accounts/logout/')
-    isAuthenticated.value = false
-    username.value = '未登录'
-    avatar.value = ''
+    try {
+      const csrftoken = getCookie('csrftoken')
+      const headers = {}
+      if (csrftoken) headers['X-CSRFToken'] = csrftoken
+      await api.post('/accounts/logout/', {}, { withCredentials: true, headers })
+    } catch (e) {
+      // ignore; still clear client state
+    } finally {
+      clearAuth()
+      // 尝试本地删除 cookie（客户端补偿）
+      document.cookie = 'sessionid=; Path=/; Max-Age=0'
+      document.cookie = 'csrftoken=; Path=/; Max-Age=0'
+      // 推荐在 logout UI 调用后做 router.replace('/login')
+    }
   }
 
-  return {
-    username, avatar, avatarTimestamp, isAuthenticated,
-    fetchUser, refreshAvatar, login, register, logout
-  }
+  return { username, avatar, avatarTimestamp, isAuthenticated, fetchUser, refreshAvatar, login, register, logout, clearAuth }
 })

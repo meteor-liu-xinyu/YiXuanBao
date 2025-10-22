@@ -1,0 +1,95 @@
+/* Global styles for the frontend app */
+
+/* 推荐字体（可选）：Inter / Noto Sans SC */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+
+:root{
+  --brand-1: #6a85e6;
+  --brand-2: #43cea2;
+  --bg-1: #f5f9ff;
+  --text-1: #18314a;
+  --muted: #6c7a89;
+  --radius: 8px;
+  --container-width: 1200px;
+}
+
+/* Reset / base */
+*{box-sizing: border-box}
+html,body,#app{height:100%}
+body{
+  margin:0;
+  font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background: linear-gradient(180deg, var(--bg-1) 0%, #eef6ff 100%);
+  color: var(--text-1);
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  line-height:1.45;
+  font-size:16px;
+}
+
+/* Container helpers */
+.container {
+  width:100%;
+  max-width:var(--container-width);
+  margin:0 auto;
+  padding:0 16px;
+}
+
+/* Headings */
+h1,h2,h3,h4{margin:0 0 .5rem 0;color:var(--text-1)}
+h1{font-size:1.75rem}
+h2{font-size:1.25rem}
+
+/* Buttons */
+.btn {
+  display:inline-block;
+  padding:10px 16px;
+  border-radius:var(--radius);
+  cursor:pointer;
+  border:none;
+  font-weight:600;
+}
+.btn-primary {
+  background: linear-gradient(90deg,var(--brand-1),var(--brand-2));
+  color:white;
+  box-shadow:0 6px 18px rgba(67,110,200,0.08);
+}
+.btn-plain {
+  background:transparent;
+  border:1px solid rgba(0,0,0,0.06);
+}
+
+/* Card */
+.card {
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: 0 8px 30px rgba(24,39,75,0.04);
+  padding: 18px;
+  color: var(--text-1);
+}
+
+/* Form */
+.input {
+  width:100%;
+  padding:10px 12px;
+  border-radius:6px;
+  border:1px solid #e6eef8;
+  background:#fff;
+  outline:none;
+}
+.input:focus{border-color:var(--brand-1);box-shadow:0 6px 20px rgba(106,133,230,0.06)}
+
+/* Utility */
+.flex{display:flex}
+.center{display:flex;align-items:center;justify-content:center}
+.mt-8{margin-top:8px}
+.mt-16{margin-top:16px}
+.mb-16{margin-bottom:16px}
+.text-muted{color:var(--muted)}
+.small{font-size:.92rem}
+
+/* Responsive tweaks */
+@media (max-width: 768px){
+  :root{--container-width: 95%}
+  h1{font-size:1.25rem}
+}
