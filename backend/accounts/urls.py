@@ -8,7 +8,7 @@ from .views import (
     GetCSRFTokenView,  # 新增导入
 )
 
-from .admin_views import AdminUserListCreateView, AdminUserRetrieveUpdateDestroyView
+from .admin_views import AdminUserListCreateView, AdminUserRetrieveUpdateDestroyView, AdminOverviewView
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
@@ -19,4 +19,5 @@ urlpatterns = [
     # Admin API - 仅供管理员使用
     path('admin/users/', AdminUserListCreateView.as_view(), name='admin-user-list'),
     path('admin/users/<int:pk>/', AdminUserRetrieveUpdateDestroyView.as_view(), name='admin-user-detail'),
+    path('admin/overview/', AdminOverviewView.as_view(), name='admin-overview'),
 ]

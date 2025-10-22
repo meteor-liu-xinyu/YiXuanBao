@@ -61,7 +61,7 @@
         <label>昵称：</label>
         <div class="profile-value">
           <template v-if="editing === 'nickname'">
-            <input v-model="editNickname" class="edit-input" />
+            <input v-model="editNickname" class="edit-input" @blur="onBlurField('nickname')" />
             <span class="icon-btn" @click="saveField('nickname')" :title="'保存'">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
                 <path d="M6 12.5L9.5 16L16 8.5" stroke="#43cea2" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
@@ -84,7 +84,7 @@
         <label>真实姓名：</label>
         <div class="profile-value">
           <template v-if="editing === 'real_name'">
-            <input v-model="editRealName" class="edit-input" />
+            <input v-model="editRealName" class="edit-input" @blur="onBlurField('real_name')" />
             <span class="icon-btn" @click="saveField('real_name')" :title="'保存'">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
                 <path d="M6 12.5L9.5 16L16 8.5" stroke="#43cea2" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
@@ -107,7 +107,7 @@
         <label>邮箱：</label>
         <div class="profile-value">
           <template v-if="editing === 'email'">
-            <input v-model="editEmail" class="edit-input" />
+            <input v-model="editEmail" class="edit-input" @blur="onBlurField('email')" />
             <span class="icon-btn" @click="saveField('email')" :title="'保存'">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
                 <path d="M6 12.5L9.5 16L16 8.5" stroke="#43cea2" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
@@ -130,7 +130,7 @@
         <label>手机号：</label>
         <div class="profile-value">
           <template v-if="editing === 'phone'">
-            <input v-model="editPhone" class="edit-input" />
+            <input v-model="editPhone" class="edit-input" @blur="onBlurField('phone')" />
             <span class="icon-btn" @click="saveField('phone')" :title="'保存'">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
                 <path d="M6 12.5L9.5 16L16 8.5" stroke="#43cea2" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
@@ -224,7 +224,7 @@
         <label>地址：</label>
         <div class="profile-value">
           <template v-if="editing === 'address'">
-            <input v-model="editAddress" class="edit-input" />
+            <input v-model="editAddress" class="edit-input" @blur="onBlurField('address')" />
             <span class="icon-btn" @click="saveField('address')" :title="'保存'">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
                 <path d="M6 12.5L9.5 16L16 8.5" stroke="#43cea2" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
@@ -242,7 +242,7 @@
         </div>
       </div>
 
-      <!-- 偏好医院/专科 -->
+      <!-- 偏好地区/专科 -->
       <div class="profile-field">
         <label>偏好地区：</label>
         <div class="profile-value">
@@ -263,16 +263,20 @@
         <div class="profile-value">{{ dateJoined || '未填写' }}</div>
       </div>
 
-      <!-- 操作按钮 -->
-      <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap">
-        <button class="back-btn" @click="goBack">返回</button>
-
+      <!-- 修改密码（单独一行） -->
+      <div style="display:flex;justify-content:center;margin-top:16px;margin-bottom:8px;">
         <button class="back-btn plain" @click="changePassword">修改密码</button>
+      </div>
 
-        <button class="save-all-btn" :disabled="saving" @click="saveAll">
-          {{ saving ? '保存中...' : '保存全部' }}
-        </button>
+      <!-- 取消与保存行：保存前必须有修改，未修改按钮灰色不可点 -->
+      <div style="display:flex;gap:12px;justify-content:center;margin-bottom:12px;">
+        <button class="back-btn plain" :disabled="!isDirty || saving" @click="cancelAll" :class="{disabled: !isDirty || saving}">取消修改</button>
+        <button class="save-all-btn" :disabled="!isDirty || saving" @click="saveAll">{{ saving ? '保存中...' : '保存全部' }}</button>
+      </div>
 
+      <!-- 底部：返回 与 退出登录，修改内容时返回灰色不可点 -->
+      <div style="display:flex;gap:12px;justify-content:center;margin-top:6px;flex-wrap:wrap">
+        <button class="back-btn" @click="goBack" :disabled="isDirty" :class="{disabled: isDirty}">返回</button>
         <button class="logout-btn" @click="confirmLogout">退出登录</button>
       </div>
     </div>
@@ -289,8 +293,9 @@ import Cookies from 'js-cookie'
 import defaultAvatar from '/default.png'
 import { useUserStore } from '@/stores/user'
 import io from 'socket.io-client' // harmless, keep noneffect if unused
+import { watch } from 'vue'
 
-/* 基本字段 */
+/* 基本字段 (server state) */
 const username = ref('')
 const nickname = ref('')
 const email = ref('')
@@ -306,7 +311,7 @@ const birthday = ref('') // displayed birthday string YYYY-MM-DD or ''
 const preferredRegion = ref('')
 const preferredSpecialty = ref('')
 
-/* edit 临时字段 */
+/* edit 临时字段 (local edits) */
 const editing = ref(null)
 const editNickname = ref('')
 const editEmail = ref('')
@@ -364,7 +369,7 @@ async function ensureCsrf() {
   }
 }
 
-/* 把任意后端 birthday 字符串规范化为 YYYY-MM-DD 或返回 null */
+/* 日期工具 */
 function formatDateForBackend(val) {
   if (!val && val !== '') return null
   if (val === '') return null
@@ -378,23 +383,15 @@ function formatDateForBackend(val) {
   }
   return null
 }
-
-/* 把 YYYY-MM-DD 字符串拆成年/月/日 */
 function parseBirthdayToParts(val) {
   const normalized = formatDateForBackend(val)
   if (!normalized) return { y: '', m: '', d: '' }
   const parts = normalized.split('-')
   return { y: parts[0], m: parts[1], d: parts[2] }
 }
-
-/* 将两位或四位年份规范化为四位（规则：00-69 -> 2000-2069 ; 70-99 -> 1970-1999） */
 function normalizeYearInput() {
   let y = String(editBirthdayYear.value || '').trim()
-  if (!y) {
-    editBirthdayYear.value = ''
-    return
-  }
-  // 清除非数字字符
+  if (!y) { editBirthdayYear.value = ''; return }
   y = y.replace(/[^\d]/g, '')
   if (y.length === 2) {
     const n = parseInt(y, 10)
@@ -402,40 +399,26 @@ function normalizeYearInput() {
     editBirthdayYear.value = String(full)
     return
   }
-  if (y.length === 3) {
-    // 如果用户误输入三位，前面补 '0'（不太常见）
-    editBirthdayYear.value = '0' + y
-    return
-  }
-  if (y.length >= 4) {
-    editBirthdayYear.value = y.slice(0, 4)
-    return
-  }
-  // 一位数字，视作 200x
+  if (y.length === 3) { editBirthdayYear.value = '0' + y; return }
+  if (y.length >= 4) { editBirthdayYear.value = y.slice(0, 4); return }
   if (y.length === 1) {
     const n = parseInt(y, 10)
-    const full = 2000 + n
-    editBirthdayYear.value = String(full)
+    editBirthdayYear.value = String(2000 + n)
   }
 }
-
-/* 把三段合并成 YYYY-MM-DD 或返回 null（若任意一段为空则返回 null） */
 function buildBirthdayFromParts() {
   const y = (editBirthdayYear.value || '').trim()
   const m = (editBirthdayMonth.value || '').trim()
   const d = (editBirthdayDay.value || '').trim()
   if (!y || !m || !d) return null
-  // 规范化 month/day 为两位
   const mm = m.padStart(2, '0')
   const dd = d.padStart(2, '0')
-  // 额外校验范围
   const yi = parseInt(y, 10)
   const mi = parseInt(mm, 10)
   const di = parseInt(dd, 10)
   if (isNaN(yi) || isNaN(mi) || isNaN(di)) return null
   if (mi < 1 || mi > 12) return null
   if (di < 1 || di > 31) return null
-  // 简单校验：对于 2/4月份的天数可做进一步校验，但后端也会验证
   return `${String(yi).padStart(4,'0')}-${String(mi).padStart(2,'0')}-${String(di).padStart(2,'0')}`
 }
 
@@ -443,7 +426,7 @@ function buildBirthdayFromParts() {
 async function fetchUserInfo() {
   try {
     const res = await api.get('/accounts/userinfo/', { withCredentials: true })
-    const data = res.data
+    const data = res.data || {}
     username.value = data.username || '未填写'
     nickname.value = data.nickname || ''
     email.value = data.email || ''
@@ -453,12 +436,11 @@ async function fetchUserInfo() {
     dateJoined.value = data.date_joined ? data.date_joined.split('T')[0] : ''
     isStaff.value = !!data.is_staff
     isSuperuser.value = !!data.is_superuser
-    realName.value = data.real_name || data.full_name || ''
+    realName.value = data.real_name || ''
     address.value = data.address || ''
     preferredRegion.value = data.preferred_region || ''
     preferredSpecialty.value = data.preferred_specialty || ''
 
-    // 规范 birthday 并拆分成 parts 以便编辑器使用
     if (data.birthday) {
       const parts = parseBirthdayToParts(data.birthday)
       birthday.value = parts.y && parts.m && parts.d ? `${parts.y}-${parts.m}-${parts.d}` : ''
@@ -472,7 +454,7 @@ async function fetchUserInfo() {
       editBirthdayDay.value = ''
     }
 
-    // 初始化其它可编辑字段
+    // Initialize edit fields to server state
     editNickname.value = nickname.value
     editEmail.value = email.value
     editGender.value = gender.value
@@ -495,14 +477,13 @@ async function fetchUserInfo() {
   }
 }
 
-/* 头像上传 & removeAvatar 保持不变（略） */
-// ...（保留你现有的头像处理函数）...
-
+/* 头像上传 & removeAvatar */
 async function onAvatarChange(e) {
-  const file = e.target.files[0]
+  const file = e.target.files && e.target.files[0]
   if (!file) return
   if (file.size > 5 * 1024 * 1024) {
     alert('文件过大，请选择小于 5MB 的图片')
+    if (avatarInput.value) avatarInput.value.value = ''
     return
   }
   cropImageUrl.value = URL.createObjectURL(file)
@@ -516,12 +497,16 @@ async function onAvatarChange(e) {
     aspectRatio: 1,
     viewMode: 1,
     dragMode: 'move',
-    autoCropArea: 1,
-    background: false,
+    autoCropArea: 0.9,
+    modal: true,
+    background: true,
+    guides: true,
+    highlight: true,
     movable: true,
     zoomable: true,
     scalable: false,
     rotatable: false,
+    responsive: true,
   })
 }
 
@@ -530,8 +515,8 @@ async function confirmCrop() {
   uploadingAvatar.value = true
   try {
     const canvas = cropper.value.getCroppedCanvas({
-      width: 300,
-      height: 300,
+      width: 420,
+      height: 420,
       imageSmoothingQuality: 'high'
     })
     const preferWebp = true
@@ -540,13 +525,14 @@ async function confirmCrop() {
     const blobFromCanvas = (q) => new Promise(resolve => canvas.toBlob(resolve, mimeType, q))
     let blob = await blobFromCanvas(quality)
     if (!blob) throw new Error('生成图片失败')
-    if (blob.size > 2 * 1024 * 1024 && mimeType === 'image/jpeg') {
-      quality = 0.6
-      blob = await blobFromCanvas(quality)
+    // 如果 webp 过大，尝试 jpeg 下降质量
+    if (blob.size > 2 * 1024 * 1024 && mimeType === 'image/webp') {
+      const jpegBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8))
+      if (jpegBlob && jpegBlob.size <= 2 * 1024 * 1024) blob = jpegBlob
     }
     await ensureCsrf()
     const csrftoken = getCookie('csrftoken') || ''
-    const ext = mimeType.includes('webp') ? 'webp' : 'jpg'
+    const ext = blob.type.includes('webp') ? 'webp' : (blob.type.includes('jpeg') ? 'jpg' : 'png')
     const formData = new FormData()
     formData.append('avatar', blob, `avatar.${ext}`)
     await api.patch('/accounts/userinfo/', formData, {
@@ -575,7 +561,7 @@ function closeCrop() {
 }
 
 function triggerAvatarUpload() {
-  avatarInput.value && avatarInput.value.click()
+  if (avatarInput.value) avatarInput.value.click()
 }
 
 function onAvatarError(e) {
@@ -612,27 +598,43 @@ function editField(field) {
   if (field === 'real_name') editRealName.value = realName.value
   if (field === 'address') editAddress.value = address.value
   if (field === 'birthday') {
-    // 当开始编辑生日时，parts 已在 fetchUserInfo 中初始化
-    // 保持现有 editBirthdayYear/Month/Day 的值
+    // parts already initialized in fetchUserInfo
   }
 }
 
-/* 保存单字段 */
+/* blur 自动填未填写（只改变输入框显示，不会直接保存） */
+function onBlurField(field) {
+  const mapping = {
+    nickname: editNickname,
+    email: editEmail,
+    gender: editGender,
+    phone: editPhone,
+    real_name: editRealName,
+    address: editAddress
+  }
+  const refObj = mapping[field]
+  if (!refObj) return
+  const v = (refObj.value ?? '')
+  if (String(v).trim() === '') {
+    refObj.value = '未填写'
+  }
+}
+
+/* Save single field */
 async function saveField(field) {
   const prevEditing = editing.value
   let payload = {}
-  if (field === 'nickname') payload.nickname = editNickname.value
-  if (field === 'email') payload.email = editEmail.value
-  if (field === 'gender') payload.gender = editGender.value
-  if (field === 'phone') payload.phone = editPhone.value
-  if (field === 'real_name') payload.real_name = editRealName.value
-  if (field === 'address') payload.address = editAddress.value
+  if (field === 'nickname') payload.nickname = editNickname.value === '未填写' ? '' : editNickname.value
+  if (field === 'email') payload.email = editEmail.value === '未填写' ? '' : editEmail.value
+  if (field === 'gender') payload.gender = editGender.value === '未填写' ? '' : editGender.value
+  if (field === 'phone') payload.phone = editPhone.value === '未填写' ? '' : editPhone.value
+  if (field === 'real_name') payload.real_name = editRealName.value === '未填写' ? '' : editRealName.value
+  if (field === 'address') payload.address = editAddress.value === '未填写' ? '' : editAddress.value
 
   if (field === 'birthday') {
-    // 合并三个输入为 YYYY-MM-DD 或 null
     normalizeYearInput()
     const built = buildBirthdayFromParts()
-    payload.birthday = built // 可能为 null 或 'YYYY-MM-DD'
+    payload.birthday = built // null or 'YYYY-MM-DD'
   }
 
   try {
@@ -657,22 +659,41 @@ async function saveField(field) {
   }
 }
 
-/* 保存全部（包含偏好） */
+/* Dirty detection: compare edit fields vs server state */
+function norm(v) { return (v === '未填写' ? '' : (v || '')) }
+const isDirty = computed(() => {
+  // compare simple text fields
+  if (norm(editNickname.value) !== norm(nickname.value)) return true
+  if (norm(editEmail.value) !== norm(email.value)) return true
+  if (norm(editGender.value) !== norm(gender.value)) return true
+  if (norm(editPhone.value) !== norm(phone.value)) return true
+  if (norm(editRealName.value) !== norm(realName.value)) return true
+  if (norm(editAddress.value) !== norm(address.value)) return true
+  if ((editPreferredRegion.value || '') !== (preferredRegion.value || '')) return true
+  if ((editPreferredSpecialty.value || '') !== (preferredSpecialty.value || '')) return true
+  // birthday comparison
+  const built = buildBirthdayFromParts()
+  const curBirthday = birthday.value || null
+  if ((built || null) !== (curBirthday || null)) return true
+  // Note: avatar changes are immediately uploaded in this component, so we don't track local avatar file as dirty here
+  return false
+})
+
+/* 保存全部 */
 async function saveAll() {
   saving.value = true
-  // 先规范 birthday 三段
   normalizeYearInput()
   const birthdayForBackend = buildBirthdayFromParts()
   const payload = {
-    nickname: editNickname.value || nickname.value,
-    email: editEmail.value || email.value,
-    gender: editGender.value || gender.value,
-    phone: editPhone.value || phone.value,
-    real_name: editRealName.value || realName.value,
-    address: editAddress.value || address.value,
-    birthday: birthdayForBackend, // null 或 'YYYY-MM-DD'
-    preferred_region: editPreferredRegion.value || preferredRegion.value,
-    preferred_specialty: editPreferredSpecialty.value || preferredSpecialty.value
+    nickname: editNickname.value === '未填写' ? '' : (editNickname.value || nickname.value || ''),
+    email: editEmail.value === '未填写' ? '' : (editEmail.value || email.value || ''),
+    gender: editGender.value === '未填写' ? '' : (editGender.value || gender.value || ''),
+    phone: editPhone.value === '未填写' ? '' : (editPhone.value || phone.value || ''),
+    real_name: editRealName.value === '未填写' ? '' : (editRealName.value || realName.value || ''),
+    address: editAddress.value === '未填写' ? '' : (editAddress.value || address.value || ''),
+    birthday: birthdayForBackend, // null or 'YYYY-MM-DD'
+    preferred_region: editPreferredRegion.value || preferredRegion.value || '',
+    preferred_specialty: editPreferredSpecialty.value || preferredSpecialty.value || ''
   }
   try {
     await ensureCsrf()
@@ -692,6 +713,30 @@ async function saveAll() {
   }
 }
 
+/* 取消所有本地改动（撤回） */
+function cancelAll() {
+  // revert edits to current server state
+  editNickname.value = nickname.value
+  editEmail.value = email.value
+  editGender.value = gender.value
+  editPhone.value = phone.value
+  editRealName.value = realName.value
+  editAddress.value = address.value
+  editPreferredRegion.value = preferredRegion.value
+  editPreferredSpecialty.value = preferredSpecialty.value
+  if (birthday.value) {
+    const p = parseBirthdayToParts(birthday.value)
+    editBirthdayYear.value = p.y
+    editBirthdayMonth.value = p.m
+    editBirthdayDay.value = p.d
+  } else {
+    editBirthdayYear.value = ''
+    editBirthdayMonth.value = ''
+    editBirthdayDay.value = ''
+  }
+  editing.value = null
+}
+
 /* 其他工具方法 */
 function genderText(g) {
   if (g === 'male') return '男 / Male'
@@ -702,6 +747,7 @@ function genderText(g) {
 
 /* 返回 */
 function goBack() {
+  if (isDirty.value) return
   router.back()
 }
 
@@ -743,7 +789,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/*（保留原有样式，增加生日输入样式） */
+/*（保留 original styles, plus disabled styling） */
 .profile-fullscreen {
   min-height: 100vh; background: #f4f8fc;
   display: flex; align-items: center; justify-content: center;
@@ -832,7 +878,7 @@ label {
   width: 64px;
 }
 
-/* 其他样式保持不变（省略重复部分以节省篇幅） */
+/* Buttons */
 .icon-btn {
   margin-left: 9px; cursor: pointer; display: flex; align-items: center;
   transition: opacity 0.16s;
@@ -864,36 +910,60 @@ label {
 .logout-btn {
   background: #fff; color:#d32f2f; border:1px solid rgba(211,47,47,0.12); border-radius:8px; padding:10px 18px; font-weight:600;
 }
+/* disabled state */
+button[disabled], .disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Cropper styles */
 .small { font-size:0.92rem; color:#6c7a89; }
 .text-muted { color:#8a98a8; }
 
 :deep(.cropper-container .cropper-modal) {
-  background: #fff !important;
-  opacity: 1 !important;
+  opacity: 0.55 !important;
+  background: rgba(0,0,0,0.55) !important;
 }
 :deep(.cropper-modal) {
   background: #fff !important;
   opacity: 1 !important;
 }
+:deep(.cropper-container .cropper-view-box) {
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06) inset;
+}
 .cropper-modal {
   position: fixed;
   left: 0; top: 0; width: 100vw; height: 100vh;
-  background: rgba(255,255,255,0.98);
+  background: rgba(0,0,0,0.55);
   z-index: 9999;
   display: flex; align-items: center; justify-content: center;
 }
 .cropper-body {
-  background: #fff;
-  padding: 18px 18px 8px 18px;
-  border-radius: 12px;
-  box-shadow: 0 2px 16px rgba(24,39,75,0.15);
+  background: rgba(255,255,255,0.06); /* 透明的白色卡片，让底下图片仍可透出 */
+  padding: 12px;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(8,12,20,0.45);
   display: flex; flex-direction: column; align-items: center;
+  max-width: 90vw;
+  max-height: 90vh;
 }
 .cropper-img {
-  max-width: 420px; max-height: 420px; min-width: 180px;
-  border-radius: 8px;
-  border: 1px solid #ddd;
+  max-width: 640px;   /* 放大上限 */
+  max-height: 80vh;   /* 视窗高度限制 */
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.08);
+  object-fit: contain;
 }
+
+/* 兼容 cropper 内部遮罩样式（确保遮罩为半透明而不是完全隐藏） */
+:deep(.cropper-container .cropper-face),
+:deep(.cropper-container .cropper-view-box),
+:deep(.cropper-container .cropper-drag-box) {
+  /* 保证交互元素可见 */
+  outline: none;
+}
+
 .crop-btn {
   margin: 0 12px;
   background: linear-gradient(90deg, #6a85e6 0%, #43cea2 100%);

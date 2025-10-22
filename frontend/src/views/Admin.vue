@@ -3,66 +3,66 @@
     <h1>管理员面板 — 用户管理</h1>
 
     <div class="admin-controls">
-      <input v-model="q" placeholder="搜索用户名 / 邮箱 / 姓名" @keyup.enter="search" />
-      <button @click="search">搜索</button>
+      <input v-model="q" placeholder="搜索管理员（用户名 / 邮箱 / 姓名）" @keyup.enter="searchAdmins" />
+      <button @click="searchAdmins">搜索管理员</button>
       <button @click="openCreate">新建用户</button>
       <button @click="exitAdmin" class="plain">退出管理员</button>
     </div>
 
     <div v-if="loading" class="loading">加载中...</div>
 
-    <table v-if="!loading" class="admin-table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>用户名</th>
-          <th>邮箱</th>
-          <th>昵称</th>
-          <th>姓名</th>
-          <th>性别</th>
-          <th>电话</th>
-          <th>生日</th>
-          <th>地区/专科</th>
-          <th>角色</th>
-          <th>状态</th>
-          <th>注册时间</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="u in users" :key="u.id">
-          <td>{{ u.id }}</td>
-          <td>{{ u.username }}</td>
-          <td>{{ u.email }}</td>
-          <td>{{ u.nickname || '-' }}</td>
-          <td>{{ (u.first_name || '') + ' ' + (u.last_name || '') }}</td>
-          <td>{{ u.gender || '-' }}</td>
-          <td>{{ u.phone || '-' }}</td>
-          <td>{{ u.birthday ? (u.birthday.indexOf('T') !== -1 ? u.birthday.split('T')[0] : u.birthday) : '-' }}</td>
-          <td>{{ (u.preferred_region||'-') + ' / ' + (u.preferred_specialty||'-') }}</td>
-          <td><span v-if="u.is_staff">管理员</span><span v-else>用户</span></td>
-          <td><span v-if="u.is_active">启用</span><span v-else>已禁用</span></td>
-          <td>{{ formatDate(u.date_joined) }}</td>
-          <td class="actions">
-            <button @click="openEdit(u)">编辑</button>
-            <button @click="toggleActive(u)">{{ u.is_active ? '停用' : '启用' }}</button>
-            <button @click="removeUser(u)" class="danger">删除</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <!-- 管理员列表 -->
+    <section v-if="!loading" class="section">
+      <h2>管理员账户（共 {{ admins.length }}）</h2>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>用户名</th><th>邮箱</th><th>姓名</th><th>注册时间</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="u in admins" :key="'admin-'+u.id">
+            <td>{{ u.id }}</td>
+            <td>{{ u.username }}</td>
+            <td>{{ u.email || '-' }}</td>
+            <td>{{ (u.first_name || '') + ' ' + (u.last_name || '') }}</td>
+            <td>{{ formatDate(u.date_joined) }}</td>
+            <td>
+              <button @click="openEdit(u)">编辑</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
 
-    <div class="pagination" v-if="pageCount > 1">
-      <button :disabled="page<=1" @click="changePage(page-1)">上一页</button>
-      <span>第 {{ page }} 页 / 共 {{ pageCount }} 页</span>
-      <button :disabled="page>=pageCount" @click="changePage(page+1)">下一页</button>
-    </div>
+    <!-- 最近登录用户 -->
+    <section v-if="!loading" class="section" style="margin-top:20px;">
+      <h2>最近登录用户（最近 20 条）</h2>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>用户名</th><th>邮箱</th><th>最后登录</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="u in recent" :key="'recent-'+u.id">
+            <td>{{ u.id }}</td>
+            <td>{{ u.username }}</td>
+            <td>{{ u.email || '-' }}</td>
+            <td>{{ formatDate(u.last_login) }}</td>
+            <td>
+              <button @click="openEdit(u)">编辑</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
 
-    <!-- 编辑/新建模态 -->
+    <!-- 编辑/新建模态（复用之前的表单逻辑） -->
     <div v-if="modalVisible" class="modal">
       <div class="modal-body">
         <h3>{{ editingUser?.id ? '编辑用户' : '新建用户' }}</h3>
-
+        <!-- 与之前相同的表单（省略冗余注释），保持你已有的表单控件 -->
         <label>用户名（只读）</label>
         <input v-model="form.username" :readonly="!!editingUser?.id" />
 
@@ -142,12 +142,10 @@ import { useUserStore } from '@/stores/user'
 const router = useRouter()
 const store = useUserStore()
 
-const users = ref([])
+const admins = ref([])
+const recent = ref([])
 const loading = ref(false)
-const page = ref(1)
-const pageCount = ref(1)
 const q = ref('')
-const pageSize = ref(20)
 
 const modalVisible = ref(false)
 const editingUser = ref(null)
@@ -210,23 +208,14 @@ function clearBirthday() {
   form.value.birthday_day = ''
 }
 
-async function fetchUsers() {
+async function fetchOverview() {
   loading.value = true
   try {
-    const res = await api.get('/accounts/admin/users/', {
-      params: { page: page.value, page_size: pageSize.value, search: q.value },
-      withCredentials: true
-    })
-    const data = res.data
-    if (data.results) {
-      users.value = data.results
-      pageCount.value = Math.ceil((data.count || users.value.length) / pageSize.value)
-    } else {
-      users.value = data.results || data
-      pageCount.value = Math.ceil((data.count || (users.value && users.value.length) || 0) / pageSize.value)
-    }
+    const res = await api.get('/accounts/admin/overview/', { withCredentials: true })
+    admins.value = res.data.admins || []
+    recent.value = res.data.recent_logins || []
   } catch (e) {
-    console.error('fetchUsers error', e)
+    console.error('fetchOverview error', e)
     if (e?.response?.status === 403) {
       router.replace('/welcome')
     }
@@ -235,8 +224,16 @@ async function fetchUsers() {
   }
 }
 
-function changePage(p) { page.value = p; fetchUsers() }
-function search() { page.value = 1; fetchUsers() }
+function searchAdmins() {
+  // 简单实现：在客户端根据 q 过滤 admins 列表
+  const term = (q.value || '').toLowerCase().trim()
+  if (!term) return fetchOverview()
+  admins.value = admins.value.filter(u =>
+    (u.username || '').toLowerCase().includes(term) ||
+    (u.email || '').toLowerCase().includes(term) ||
+    (((u.first_name || '') + ' ' + (u.last_name || '')).toLowerCase().includes(term))
+  )
+}
 
 function openEdit(u) {
   editingUser.value = u
@@ -312,7 +309,6 @@ async function saveUser() {
   saving.value = true
   try {
     const csrftoken = (document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)') || [])[2] || ''
-    // 构造 payload
     const payloadObj = {
       nickname: form.value.nickname || null,
       email: form.value.email || null,
@@ -331,23 +327,18 @@ async function saveUser() {
     if (form.value.password) payloadObj.password = form.value.password
 
     if (avatarFile.value) {
-      // 使用 FormData 发送（multipart/form-data）
       const formData = new FormData()
-      // append JSON fields
       Object.keys(payloadObj).forEach(k => {
-        // FormData 不接受 undefined，明确传 null -> '' 或 'null'，这里使用 '' 表示清空
         const v = payloadObj[k] === null ? '' : payloadObj[k]
         if (v !== undefined) formData.append(k, v)
       })
       formData.append('avatar', avatarFile.value)
       if (!editingUser.value) {
-        // create
         await api.post('/accounts/admin/users/', formData, { withCredentials: true, headers: { 'X-CSRFToken': csrftoken } })
       } else {
         await api.patch(`/accounts/admin/users/${editingUser.value.id}/`, formData, { withCredentials: true, headers: { 'X-CSRFToken': csrftoken } })
       }
     } else {
-      // 以 JSON 发送。注意：若想表示删除 avatar，请在 payloadObj.avatar = null 并后端处理
       if (!editingUser.value) {
         payloadObj.username = form.value.username
         await api.post('/accounts/admin/users/', payloadObj, { withCredentials: true, headers: { 'X-CSRFToken': csrftoken } })
@@ -356,7 +347,7 @@ async function saveUser() {
       }
     }
 
-    await fetchUsers()
+    await fetchOverview()
     closeModal()
   } catch (e) {
     console.error('saveUser error', e)
@@ -367,23 +358,12 @@ async function saveUser() {
   }
 }
 
-async function toggleActive(u) {
-  const csrftoken = (document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)') || [])[2] || ''
-  try {
-    await api.patch(`/accounts/admin/users/${u.id}/`, { is_active: !u.is_active }, { withCredentials: true, headers: { 'X-CSRFToken': csrftoken } })
-    await fetchUsers()
-  } catch (e) {
-    console.error(e)
-    alert('操作失败')
-  }
-}
-
 async function removeUser(u) {
   if (!confirm(`确认删除用户 ${u.username} ? 该操作不可恢复`)) return
   const csrftoken = (document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)') || [])[2] || ''
   try {
     await api.delete(`/accounts/admin/users/${u.id}/`, { withCredentials: true, headers: { 'X-CSRFToken': csrftoken } })
-    await fetchUsers()
+    await fetchOverview()
   } catch (e) {
     console.error(e)
     alert('删除失败')
@@ -391,12 +371,10 @@ async function removeUser(u) {
 }
 
 function exitAdmin() {
-  // 退出管理员页面，直接跳转到 welcome
   router.replace('/welcome')
 }
 
 onMounted(async () => {
-  // 权限判断由路由守卫处理，这里再做一次保护
   if (!store.isAuthenticated) {
     const hasSessionCookie = document.cookie.includes('sessionid=')
     if (hasSessionCookie) await store.fetchUser()
@@ -405,7 +383,7 @@ onMounted(async () => {
     router.replace('/welcome')
     return
   }
-  fetchUsers()
+  fetchOverview()
 })
 </script>
 
@@ -413,9 +391,9 @@ onMounted(async () => {
 .admin-page { padding: 24px; }
 .admin-controls { display:flex; gap:8px; margin-bottom:12px; align-items:center; }
 .admin-controls .plain { background: transparent; color: #6a85e6; border: 1px solid rgba(106,133,230,0.14); padding:6px 10px; border-radius:6px; cursor:pointer; }
+.section { margin-bottom: 18px; }
 .admin-table { width:100%; border-collapse: collapse; margin-top:8px; }
 .admin-table th, .admin-table td { border: 1px solid #eee; padding:8px; text-align:left; font-size:0.95rem }
-.actions button { margin-right:6px; }
 .modal { position:fixed; left:0; top:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.45); z-index:9999; }
 .modal-body { background:#fff; padding:20px; border-radius:8px; width:720px; max-width:94vw; display:flex; flex-direction:column; gap:8px; max-height:90vh; overflow:auto }
 .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
