@@ -665,6 +665,17 @@ async function removeUserConfirmed() {
   try {
     await api.delete(`/accounts/admin/users/${u.id}/`, { withCredentials: true, headers: { 'X-CSRFToken': csrftoken } })
 
+    // Try to also delete the user's history on the server.
+    // The backend should expose an endpoint like DELETE /accounts/admin/users/{id}/history/
+    // If it doesn't exist, this will fail silently (we log the error).
+    try {
+      await api.delete(`/accounts/admin/users/${u.id}/history/`, { withCredentials: true, headers: { 'X-CSRFToken': csrftoken } })
+      console.log(`Deleted history for user ${u.id}`)
+    } catch (err) {
+      // endpoint might not exist — log and continue
+      console.warn('Failed to delete user history (endpoint may be missing):', err)
+    }
+
     // 本地立即移除
     admins.value = admins.value.filter(x => x.id !== u.id)
     recent.value = recent.value.filter(x => x.id !== u.id)

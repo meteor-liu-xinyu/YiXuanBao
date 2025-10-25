@@ -4,11 +4,23 @@
       <h2>用户注册 / Register</h2>
 
       <form @submit.prevent="onRegister">
-        <input v-model="username" placeholder="用户名 / Username" autocomplete="username" required />
+        <div style="position:relative;">
+          <input
+            v-model="username"
+            placeholder="用户名 / Username"
+            autocomplete="username"
+            required
+            @blur="onUsernameBlur"
+          />
+          <span v-if="checkingUsername" class="username-status checking">检测中...</span>
+          <span v-else-if="usernameAvailable === true" class="username-status available">可用 ✓</span>
+          <span v-else-if="usernameAvailable === false" class="username-status taken">已被占用 ✕</span>
+        </div>
+
         <input v-model="password" type="password" placeholder="密码 / Password" autocomplete="new-password" required />
         <input v-model="confirm" type="password" placeholder="确认密码 / Confirm password" autocomplete="new-password" required />
 
-        <button type="submit" :disabled="loading">
+        <button type="submit" :disabled="loading || usernameAvailable === false">
           {{ loading ? '注册中... / Registering...' : '注册 / Register' }}
         </button>
 
@@ -38,6 +50,11 @@ const success = ref('')
 const router = useRouter()
 const user = useUserStore()
 
+// username availability state:
+// null = not checked yet, true = available, false = taken
+const usernameAvailable = ref(null)
+const checkingUsername = ref(false)
+
 function getCookie(name) {
   const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)')
   return m ? decodeURIComponent(m.pop()) : ''
@@ -53,6 +70,61 @@ async function ensureCsrf() {
   }
 }
 
+/**
+ * Check username availability by calling backend.
+ * Expected backend endpoint: GET /accounts/check-username/?username=xxx
+ * Response handling tolerant:
+ *   - if response.data.exists === true -> username taken
+ *   - if response.data.exists === false -> available
+ *   - if response.data.available present -> use it (boolean)
+ * If the endpoint is not available or request fails, we set usernameAvailable = null (unknown).
+ */
+async function checkUsernameAvailability(name) {
+  if (!name || String(name).trim().length === 0) {
+    usernameAvailable.value = null
+    return null
+  }
+
+  checkingUsername.value = true
+  usernameAvailable.value = null
+  try {
+    const res = await api.get('/accounts/check-username/', {
+      params: { username: name },
+      withCredentials: true
+    })
+    const data = res && res.data ? res.data : {}
+    // Prefer explicit boolean fields
+    if (typeof data.exists === 'boolean') {
+      usernameAvailable.value = !data.exists
+    } else if (typeof data.available === 'boolean') {
+      usernameAvailable.value = !!data.available
+    } else if (typeof data.is_taken === 'boolean') {
+      usernameAvailable.value = !data.is_taken
+    } else {
+      // fallback: if server returned 200 and no clear field, assume available
+      usernameAvailable.value = true
+    }
+    return usernameAvailable.value
+  } catch (e) {
+    // network error or endpoint missing -> do not block registration, but leave as unknown
+    usernameAvailable.value = null
+    // Optionally, you could set error.value here, but better to surface on submit if needed
+    return null
+  } finally {
+    checkingUsername.value = false
+  }
+}
+
+async function onUsernameBlur() {
+  // perform availability check on blur; ignore empty usernames
+  if (!username.value || String(username.value).trim().length === 0) {
+    usernameAvailable.value = null
+    return
+  }
+  // we don't await multiple concurrent checks — ensure serial by awaiting
+  await checkUsernameAvailability(username.value.trim())
+}
+
 async function onRegister() {
   error.value = ''
   success.value = ''
@@ -60,6 +132,21 @@ async function onRegister() {
   if (password.value !== confirm.value) {
     error.value = '两次密码不一致 / Passwords do not match'
     return
+  }
+
+  // If availability already known and username is taken, block immediately
+  if (usernameAvailable.value === false) {
+    error.value = '用户名已被占用 / Username already taken'
+    return
+  }
+
+  // If availability unknown, perform a synchronous check (best-effort)
+  if (usernameAvailable.value === null) {
+    const avail = await checkUsernameAvailability(username.value.trim())
+    if (avail === false) {
+      error.value = '用户名已被占用 / Username already taken'
+      return
+    }
   }
 
   loading.value = true
@@ -71,10 +158,10 @@ async function onRegister() {
     // If your store.register returns the axios response, handle it; otherwise fallback to api call.
     let res
     if (typeof user.register === 'function') {
-      res = await user.register({ username: username.value, password: password.value })
+      res = await user.register({ username: username.value.trim(), password: password.value })
     } else {
       res = await api.post('/accounts/register/', {
-        username: username.value,
+        username: username.value.trim(),
         password: password.value
       }, { withCredentials: true })
     }
@@ -82,6 +169,8 @@ async function onRegister() {
     // Treat 2xx as success
     if (res && (res.status === 200 || res.status === 201 || res.status === 204)) {
       success.value = '注册成功 / Register successful'
+      // mark username as taken now that it's registered
+      usernameAvailable.value = false
       setTimeout(() => router.replace('/login'), 1000)
     } else {
       error.value = '注册失败，请稍后重试 / Register failed'
@@ -90,7 +179,7 @@ async function onRegister() {
     // Prefer backend message if present
     error.value =
       e?.response?.data?.detail ||
-      e?.response?.data ||
+      (e?.response?.data && typeof e.response.data === 'string' ? e.response.data : '') ||
       '注册失败 / Register failed'
   } finally {
     loading.value = false
@@ -139,6 +228,19 @@ async function onRegister() {
   border: 1.5px solid #6a85e6;
   box-shadow: 0 4px 18px rgba(106,133,230,0.08);
 }
+
+.username-status {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  font-size: 0.9rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.username-status.checking { color:#666; background:#fffbea; border:1px solid #f0e6b8; }
+.username-status.available { color:#155724; background:#e6f4ea; border:1px solid #c7ebd1; }
+.username-status.taken { color:#7a1c1c; background:#fdecea; border:1px solid #f5c6cb; }
+
 .login-card button {
   width: 100%;
   padding: 12px;

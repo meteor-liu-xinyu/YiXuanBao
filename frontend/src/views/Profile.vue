@@ -197,25 +197,33 @@
         <label>出生日期：</label>
         <div class="profile-value" style="align-items:center;">
           <template v-if="editing === 'birthday'">
-            <div class="birthday-inputs">
+            <div class="birthday-inputs" @keydown.enter.stop>
               <input
+                ref="birthYearInput"
                 v-model.trim="editBirthdayYear"
                 class="birthday-year"
                 placeholder="年"
                 maxlength="4"
-                @blur="onBlurAndSave('birthday')"
+                @blur="onBlurAndSave('birthday', $event)"
                 inputmode="numeric"
               />
-              <select v-model="editBirthdayMonth" class="birthday-month" @change="onChangeAndSave('birthday')">
+              <select
+                ref="birthMonthInput"
+                v-model="editBirthdayMonth"
+                class="birthday-month"
+                @change="onBirthdayChange"
+                @blur="onBlurAndSave('birthday', $event)"
+              >
                 <option value="">月</option>
                 <option v-for="m in 12" :key="m" :value="String(m).padStart(2,'0')">{{ String(m).padStart(2,'0') }}</option>
               </select>
               <input
+                ref="birthDayInput"
                 v-model.trim="editBirthdayDay"
                 class="birthday-day"
                 placeholder="日"
                 maxlength="2"
-                @blur="onBlurAndSave('birthday')"
+                @blur="onBlurAndSave('birthday', $event)"
                 inputmode="numeric"
               />
             </div>
@@ -321,6 +329,11 @@ const editBirthdayMonth = ref('')
 const editBirthdayDay = ref('')
 const editPreferredRegion = ref([])
 // editPreferredSpecialty removed
+
+/* refs for birthday inputs to coordinate focus handling */
+const birthYearInput = ref(null)
+const birthMonthInput = ref(null)
+const birthDayInput = ref(null)
 
 /* avatar */
 const avatarInput = ref(null)
@@ -731,8 +744,39 @@ function onBlurPhone() {
 }
 
 /* other blur save */
-function onBlurAndSave(field) {
+/**
+ * Improved onBlurAndSave:
+ * - Accepts optional event to detect where focus moved.
+ * - For 'birthday' field, defer finalizing (editing = null) if focus moved to another birthday input (year/month/day),
+ *   preventing the inputs from disappearing when user switches between them.
+ */
+function onBlurAndSave(field, ev) {
   if (field === 'birthday') normalizeYearInput()
+
+  // For birthday, we need to allow focus transitions between the three inputs.
+  if (field === 'birthday') {
+    // small deferral to allow document.activeElement to update
+    setTimeout(() => {
+      const active = document.activeElement
+      const yearEl = birthYearInput.value
+      const monthEl = birthMonthInput.value
+      const dayEl = birthDayInput.value
+      // If focus moved to another birthday input, do not finalize editing (keep inputs visible)
+      if (active === yearEl || active === monthEl || active === dayEl) {
+        // still save draft but keep editing open
+        saveLocalDraft(); applyDraftToDisplay()
+        return
+      }
+      // otherwise finalize
+      // same logic as original: normalize empty -> '未填写'
+      const built = buildBirthdayFromParts()
+      if (!built) { editBirthdayYear.value = ''; editBirthdayMonth.value = ''; editBirthdayDay.value = '' }
+      saveLocalDraft(); applyDraftToDisplay(); editing.value = null
+    }, 10)
+    return
+  }
+
+  // Non-birthday fields: original behavior
   switch (field) {
     case 'nickname':
       if (!String(editNickname.value || '').trim()) editNickname.value = '未填写'
@@ -740,15 +784,16 @@ function onBlurAndSave(field) {
     case 'real_name':
       if (!String(editRealName.value || '').trim()) editRealName.value = '未填写'
       break
-    // 'preferred_specialty' case removed
-    case 'birthday': {
-      const built = buildBirthdayFromParts()
-      if (!built) { editBirthdayYear.value = ''; editBirthdayMonth.value = ''; editBirthdayDay.value = '' }
-      break
-    }
     default: break
   }
   saveLocalDraft(); applyDraftToDisplay(); editing.value = null
+}
+
+/* Birthday month change should not close editing - just persist and update display */
+function onBirthdayChange() {
+  normalizeYearInput()
+  saveLocalDraft()
+  applyDraftToDisplay()
 }
 
 /* cascader change */
