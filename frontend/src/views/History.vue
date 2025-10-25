@@ -13,7 +13,7 @@
       </div>
 
       <div v-if="!entries.length" class="empty" style="padding:40px;text-align:center;color:#777;">
-        暂无历史记录。使用「推荐医院」完成一次提交即可在这里查看历史。
+        暂无历史记录。
       </div>
 
       <div v-else class="entries-list" style="display:flex;flex-direction:column;gap:12px;">
@@ -43,7 +43,6 @@
           </div>
 
           <div class="entry-body" style="display:flex;gap:20px;margin-top:12px;flex-wrap:wrap;">
-            <!-- 优先显示 disease_label（通常为 "CODE 名称"），若无则显示 disease_code -->
             <div v-if="it.payload?.disease_label || it.payload?.disease_code" class="field-pill">
               <strong>疾病（ICD）</strong>
               <div class="val">
@@ -54,7 +53,6 @@
 
             <div v-if="it.payload?.urgency" class="field-pill"><strong>紧迫性</strong><div class="val">{{ urgencyText(it.payload.urgency) }}</div></div>
             <div v-if="it.payload?.health_risk !== null && it.payload?.health_risk !== undefined" class="field-pill"><strong>风险评分</strong><div class="val">{{ it.payload.health_risk }}</div></div>
-            <!-- 修改：仅当 economic_level 有实际值且不是 '' 或 '无要求' 时才显示 -->
             <div v-if="it.payload && it.payload.economic_level !== null && it.payload.economic_level !== undefined && it.payload.economic_level !== '' && it.payload.economic_level !== '无要求'" class="field-pill"><strong>经济承受</strong><div class="val">{{ economicText(it.payload.economic_level) }}</div></div>
             <div v-if="regionLabelFor(it.payload)" class="field-pill" style="min-width:220px"><strong>地区</strong><div class="val">{{ regionLabelFor(it.payload) }}</div></div>
             <div v-if="it.payload?.past_history" class="field-pill large"><strong>既往病史</strong><div class="val">{{ it.payload.past_history }}</div></div>
@@ -71,10 +69,14 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import areasData from '@/assets/areas.json'
+import api from '@/api/api'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const HISTORY_KEY = 'recommend_history_v1'
 const entries = ref([])
+
+const userStore = useUserStore()
 
 /* --- region helpers (same approach as Result.vue / Recommend.vue) --- */
 function buildCascaderOptionsFromTree(tree) {
@@ -157,7 +159,7 @@ function formatDate(s) {
 }
 
 /* --- storage operations --- */
-function loadHistory() {
+function loadHistoryLocal() {
   try {
     const raw = localStorage.getItem(HISTORY_KEY)
     if (!raw) return []
@@ -165,31 +167,62 @@ function loadHistory() {
     if (!Array.isArray(arr)) return []
     return arr
   } catch (e) {
-    console.debug('loadHistory failed', e)
+    console.debug('loadHistoryLocal failed', e)
     return []
   }
 }
-function persist(arr) {
-  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(arr)) } catch (e) { console.debug('persist failed', e) }
+
+async function fetchHistoryFromServer() {
+  try {
+    const res = await api.get('/accounts/history/', { withCredentials: true })
+    // expected res.data 为数组或 paginated results
+    entries.value = Array.isArray(res.data) ? res.data : (res.data.results || [])
+  } catch (e) {
+    console.error('fetchHistoryFromServer failed', e)
+    ElMessage.error('加载历史失败，显示本地历史（如有）')
+    entries.value = loadHistoryLocal()
+  }
 }
 
 /* --- actions --- */
 function removeOne(item) {
   ElMessageBox.confirm('确认删除该历史项？', '删除', { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' })
-    .then(() => {
-      const remaining = entries.value.filter(x => x.id !== item.id)
-      entries.value = remaining
-      persist(remaining)
-      ElMessage.success('已删除')
+    .then(async () => {
+      if (userStore && (userStore.isAuthenticated || userStore.username)) {
+        try {
+          await api.delete(`/accounts/history/${item.id}/`, { withCredentials: true })
+          await fetchHistoryFromServer()
+          ElMessage.success('已删除')
+        } catch (e) {
+          console.error('delete history failed', e)
+          ElMessage.error('删除失败')
+        }
+      } else {
+        const remaining = entries.value.filter(x => x.id !== item.id)
+        entries.value = remaining
+        try { localStorage.setItem(HISTORY_KEY, JSON.stringify(remaining)) } catch (e) {}
+        ElMessage.success('已删除（本地）')
+      }
     }).catch(() => {})
 }
 
 function clearAll() {
   ElMessageBox.confirm('确认清空全部历史？此操作不可恢复。', '清空历史', { confirmButtonText: '清空', cancelButtonText: '取消', type: 'warning' })
-    .then(() => {
-      entries.value = []
-      persist([])
-      ElMessage.success('已清空')
+    .then(async () => {
+      if (userStore && (userStore.isAuthenticated || userStore.username)) {
+        try {
+          await api.delete('/accounts/history/clear/', { withCredentials: true })
+          entries.value = []
+          ElMessage.success('已清空')
+        } catch (e) {
+          console.error('clear history failed', e)
+          ElMessage.error('清空失败')
+        }
+      } else {
+        entries.value = []
+        try { localStorage.removeItem(HISTORY_KEY) } catch (e) {}
+        ElMessage.success('已清空（本地）')
+      }
     }).catch(() => {})
 }
 
@@ -199,24 +232,14 @@ function clearAll() {
  */
 function openEntry(item) {
   try {
-    // ensure payload present
     const p = item && item.payload ? item.payload : {}
-    // store payload and result into sessionStorage so Result.vue can read them reliably
-    try { sessionStorage.setItem('recommend_payload', JSON.stringify(p)) } catch (e) { console.debug('save recommend_payload failed', e) }
-    // if the history item contains a saved result array, use it; otherwise set an empty array
+    try { sessionStorage.setItem('recommend_payload', JSON.stringify(p)) } catch (e) {}
     try {
       const r = item && item.result ? item.result : []
       sessionStorage.setItem('recommend_result', JSON.stringify(r))
-    } catch (e) { console.debug('save recommend_result failed', e) }
-
-    // navigate without state (Result.vue will read sessionStorage)
+    } catch (e) {}
     router.push('/result')
-  } catch (e) {
-    // fallback: try router state push and also sessionStorage
-    try { sessionStorage.setItem('recommend_payload', JSON.stringify(item.payload || {})) } catch (_) {}
-    try { sessionStorage.setItem('recommend_result', JSON.stringify(item.result || [])) } catch (_) {}
-    try { router.push({ path: '/result', state: { result: item.result || [], payload: item.payload || {} } }) } catch (_) { router.push('/result') }
-  }
+  } catch (e) {}
 }
 
 function goBack() {
@@ -232,7 +255,11 @@ function goBack() {
 }
 
 onMounted(() => {
-  entries.value = loadHistory()
+  if (userStore && (userStore.isAuthenticated || userStore.username)) {
+    fetchHistoryFromServer()
+  } else {
+    entries.value = loadHistoryLocal()
+  }
 })
 </script>
 

@@ -173,3 +173,19 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         instance = super().update(instance, validated_data)
         instance.save()
         return instance
+
+# 新增历史序列化器
+from .models import RecommendationHistory
+
+class HistorySerializer(serializers.ModelSerializer):
+    """
+    序列化 RecommendationHistory，用于前端读写用户历史。
+    前端 POST 时可只提供 summary/payload/result；user 与 created_at 由后端处理。
+    """
+    id = serializers.IntegerField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        model = RecommendationHistory
+        fields = ('id', 'summary', 'payload', 'result', 'created_at')
+        read_only_fields = ('id', 'created_at')

@@ -8,12 +8,10 @@
         <div><strong>姓名：</strong>{{ payload.name || '未填写' }}</div>
         <div><strong>性别：</strong>{{ genderText(payload.gender) }}</div>
         <div><strong>年龄：</strong>{{ payload.age ?? '未填写' }}</div>
-        <!-- 优先显示 disease_label（code + 名称），否则使用 disease_code -->
         <div><strong>疾病（ICD）：</strong>{{ payload.disease_label || payload.disease_code || '未填写' }}</div>
         <div><strong>就医紧迫性：</strong>{{ urgencyText(payload.urgency) }}</div>
         <div><strong>健康风险评分：</strong>{{ payload.health_risk ?? '未填写' }}</div>
         <div class="region-cell"><strong>地区：</strong>{{ regionLabel || '未填写' }}</div>
-        <!-- 经济承受：空字符串 表示“无要求”，null/undefined 表示“未填写” -->
         <div><strong>经济承受：</strong>{{ economicText(payload.economic_level) }}</div>
       </div>
       <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
@@ -24,11 +22,12 @@
     </el-card>
 
     <div v-if="loadingResults" style="text-align:center;padding:24px">
-      <el-spinner /> 正在获取推荐结果...
+      <el-icon><Loading /></el-icon> 正在获取推荐结果...
     </div>
 
     <div v-else-if="!hospitals || hospitals.length === 0" class="no-result">
-      <el-empty description="未找到推荐结果">
+      <!-- 如果没有医院，显示空状态。不要显示示例数据 -->
+      <el-empty description="未匹配到医院推荐">
         <template #footer>
           <el-button type="primary" @click="goBack">返回修改条件</el-button>
         </template>
@@ -36,6 +35,7 @@
     </div>
 
     <div v-else class="results-wrapper">
+      <!-- 结果列表（保持原样） -->
       <div class="controls">
         <div>
           <el-select v-model="sortKey" placeholder="排序" size="small" @change="applySort">
@@ -85,6 +85,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import areasData from '@/assets/areas.json'
 import api from '@/api/api'
+import { Loading } from '@element-plus/icons-vue'  // 新增：Loading 图标
 
 const route = useRoute()
 const router = useRouter()
@@ -182,6 +183,7 @@ const filterKeyword = ref('')
 const sortKey = ref('score_desc')
 
 const filteredAndSorted = computed(() => {
+  // same sorting/filtering logic as before
   let list = (hospitals.value || []).slice()
   if (filterKeyword.value) {
     const kw = filterKeyword.value.toLowerCase()
@@ -213,6 +215,7 @@ const filteredAndSorted = computed(() => {
   })
   return list
 })
+
 
 function applySort() {}
 function applyFilter() {}
@@ -252,41 +255,93 @@ function copyPayload() {
 }
 
 async function fetchRecommendationsFromBackend(p) {
-  if (!p) return
+  if (!p || Object.keys(p || {}).length === 0) return
   loadingResults.value = true
+
+  function normalizePayloadForBackend(raw) {
+    const payload = { ...raw }
+
+    try {
+      const vals = Array.isArray(payload.region) && payload.region.length ? payload.region
+        : (Array.isArray(payload.region_cascader) && payload.region_cascader.length ? payload.region_cascader : [])
+      if (Array.isArray(vals) && vals.length) {
+        const opts = (regionOptions && (regionOptions.value || regionOptions)) || []
+        const labels = typeof valuesToLabelsFallback === 'function'
+          ? valuesToLabelsFallback(vals, opts)
+          : vals.map(v => String(v))
+        payload.region = labels.join('/')
+      } else {
+        payload.region = ''
+      }
+    } catch (e) {
+      payload.region = ''
+    }
+
+    if (payload.economic_level === '' || payload.economic_level === '无要求' || payload.economic_level === undefined || payload.economic_level === null) {
+      delete payload.economic_level
+    } else {
+      const n = Number(payload.economic_level)
+      if (Number.isNaN(n)) delete payload.economic_level
+      else payload.economic_level = n
+    }
+
+    if (payload.age !== null && payload.age !== undefined && payload.age !== '') payload.age = Number(payload.age)
+    if (payload.health_risk !== null && payload.health_risk !== undefined && payload.health_risk !== '') payload.health_risk = Number(payload.health_risk)
+    return payload
+  }
+
   try {
-    const res = await api.post('/recommend/', p, { withCredentials: true })
+    const normalized = normalizePayloadForBackend(p)
+    const res = await api.post('/recommend/', normalized, { withCredentials: true })
     const results = (res && res.data && res.data.results) ? res.data.results : []
-    hospitals.value = results
+
+    hospitals.value = results || []
+
     try {
       sessionStorage.setItem('recommend_payload', JSON.stringify(p))
       sessionStorage.setItem('recommend_result', JSON.stringify(results))
     } catch (e) {}
+
+    return results
   } catch (e) {
     console.error('fetchRecommendationsFromBackend failed', e)
-    ElMessage.error('从推荐服务读取结果失败，使用本地缓存（若有）或显示空结果')
+    const detail = e?.response?.data?.detail
+    const errors = e?.response?.data?.errors
+    if (detail) {
+      ElMessage.error(String(detail))
+    } else if (errors && typeof errors === 'object') {
+      try {
+        const parts = []
+        for (const k of Object.keys(errors)) {
+          parts.push(`${k}: ${Array.isArray(errors[k]) ? errors[k].join('; ') : String(errors[k])}`)
+        }
+        ElMessage.error(parts.join('；'))
+      } catch (_) {
+        ElMessage.error('推荐服务返回参数错误')
+      }
+    } else {
+      ElMessage.error('从推荐服务读取结果失败，请稍后重试')
+    }
+
+    hospitals.value = []
+    return []
   } finally {
     loadingResults.value = false
   }
 }
 
+// recompute 调用
+function recompute() {
+  if (!payload.value || Object.keys(payload.value).length === 0) {
+    ElMessage.info('当前没有请求参数，无法重新推荐')
+    return
+  }
+  fetchRecommendationsFromBackend(payload.value)
+}
+
 onMounted(() => {
-  // if no result present but payload exists, call backend to get recommendations
   if ((!hospitals.value || hospitals.value.length === 0) && payload.value && Object.keys(payload.value).length) {
     fetchRecommendationsFromBackend(payload.value)
-  }
-
-  // fallback demo if still empty
-  if ((!hospitals.value || hospitals.value.length === 0) && payload.value && Object.keys(payload.value).length) {
-    const base = [
-      { name: '市人民医院', address: '市中心路 1 号', specialty: '综合', contact: '010-1111111' },
-      { name: '省肿瘤医院', address: '省道 10 号', specialty: '肿瘤科', contact: '010-2222222' },
-      { name: '市心血管医院', address: '健康路 2 号', specialty: '心血管科', contact: '010-3333333' },
-      { name: '儿童医院', address: '儿童街 3 号', specialty: '儿科', contact: '010-4444444' },
-      { name: '妇产医院', address: '和平路 4 号', specialty: '妇产科', contact: '010-5555555' },
-      { name: '康复中心', address: '康复路 6 号', specialty: '康复科', contact: '010-6666666' }
-    ]
-    hospitals.value = base.map((b, i) => ({ id: i+1, ...b, recommendation_score: 50 + (i*5), distance: Math.round((i + 1) * 1.2 * 10) / 10 }))
   }
 })
 </script>

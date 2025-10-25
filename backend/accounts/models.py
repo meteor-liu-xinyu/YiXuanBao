@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils import timezone
 
 class User(AbstractUser):
     """
@@ -43,3 +44,28 @@ class User(AbstractUser):
         verbose_name = '用户'
         verbose_name_plural = '用户'
         db_table = 'users_user'
+
+
+class RecommendationHistory(models.Model):
+    """
+    用户的推荐/请求历史记录，存储在数据库中（每个用户一组历史）。
+    - user: 关联用户（删除用户时一并删除历史）
+    - summary: 简短文本摘要（方便前端展示与搜索）
+    - payload: 请求参数（JSONField）
+    - result: 推荐结果（JSONField，可为空）
+    - created_at: 创建时间
+    """
+    user = models.ForeignKey(User, related_name='histories', on_delete=models.CASCADE)
+    summary = models.CharField('摘要', max_length=255, blank=True, null=True)
+    payload = models.JSONField('payload', blank=True, null=True, default=dict)
+    result = models.JSONField('result', blank=True, null=True, default=list)
+    created_at = models.DateTimeField('创建时间', default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '推荐历史'
+        verbose_name_plural = '推荐历史'
+        db_table = 'accounts_recommendationhistory'
+
+    def __str__(self):
+        return f'{self.user.username} @ {self.created_at.isoformat()}'

@@ -1,16 +1,17 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import permissions, status
-from django.contrib.auth import authenticate, login, logout
-from django.db import transaction
+from rest_framework.exceptions import PermissionDenied
+from rest_framework import generics, permissions, status
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import AllowAny
-from .serializers import UserSerializer, UserUpdateSerializer
-from .models import User
+from django.db import transaction
+from django.contrib.auth import authenticate, login, logout
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.middleware.csrf import get_token
 from django.conf import settings
+from .serializers import UserSerializer, UserUpdateSerializer, HistorySerializer
+from .models import User, RecommendationHistory
 
 # 以下用于服务器端图片处理（可选）
 from django.core.files.uploadedfile import InMemoryUploadedFile
@@ -189,3 +190,34 @@ class CheckUsernameView(APIView):
             return Response({'detail': 'username required'}, status=status.HTTP_400_BAD_REQUEST)
         exists = User.objects.filter(username=username).exists()
         return Response({'exists': exists, 'available': not exists})
+
+class HistoryListCreateView(generics.ListCreateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = HistorySerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        return RecommendationHistory.objects.filter(user=self.request.user).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class HistoryDestroyView(generics.DestroyAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = HistorySerializer
+    queryset = RecommendationHistory.objects.all()
+
+    def get_object(self):
+        obj = super().get_object()
+        if obj.user != self.request.user and not self.request.user.is_staff:
+            raise PermissionDenied("没有权限删除该历史")
+        return obj
+
+
+class ClearHistoryView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, *args, **kwargs):
+        RecommendationHistory.objects.filter(user=request.user).delete()
+        return Response({'detail': 'cleared'}, status=status.HTTP_200_OK)

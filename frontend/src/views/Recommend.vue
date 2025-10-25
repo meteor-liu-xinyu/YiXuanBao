@@ -473,7 +473,7 @@ function reset() {
 }
 
 /* -- 历史保存相关 -- */
-function loadHistory() {
+function loadHistoryLocal() {
   try {
     const raw = localStorage.getItem(HISTORY_KEY)
     if (!raw) return []
@@ -481,19 +481,37 @@ function loadHistory() {
     if (!Array.isArray(arr)) return []
     return arr
   } catch (e) {
-    console.debug('loadHistory failed', e)
+    console.debug('loadHistoryLocal failed', e)
     return []
   }
 }
+function persistHistoryLocal(arr) {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(arr)) } catch (e) { console.debug('persistHistoryLocal failed', e) }
+}
 
-function saveHistoryEntry(entry) {
+async function saveHistoryToServerOrLocal(entry) {
   try {
-    const cur = loadHistory()
-    cur.unshift(entry)
-    const limited = cur.slice(0, 200)
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(limited))
+    if (isLoggedIn.value) {
+      // POST 到 /api/accounts/history/
+      await api.post('/accounts/history/', {
+        summary: entry.summary,
+        payload: entry.payload,
+        result: entry.result || []
+      }, { withCredentials: true })
+      return
+    }
   } catch (e) {
-    console.debug('saveHistoryEntry failed', e)
+    console.debug('saveHistory to server failed', e)
+    // 失败则回退到 local
+  }
+
+  // fallback local
+  try {
+    const cur = loadHistoryLocal()
+    cur.unshift(entry)
+    persistHistoryLocal(cur.slice(0, 200))
+  } catch (e) {
+    console.debug('persist fallback failed', e)
   }
 }
 
@@ -504,8 +522,6 @@ async function submit() {
   form.history_satisfaction = historyRating.value
 
   const urgencyMap = { emergency: 2, urgent: 1, routine: 0 }
-  const economicForPayload = (form.economic_level === '无要求') ? '' : form.economic_level
-
   const payload = {
     name: form.name || '',
     gender: form.gender || '',
@@ -515,45 +531,105 @@ async function submit() {
     disease_vector: form.disease_vector || [],
     disease_description: form.disease_description || '',
     past_history: form.past_history || '',
-    economic_level: economicForPayload,
-    region: form.region_cascader,
+    economic_level: form.economic_level, // 原始值，normalize 时处理
+    region: form.region_cascader || form.region || [],
+    region_cascader: form.region_cascader || [],
     health_risk: form.health_risk === null ? null : Number(form.health_risk),
     urgency: form.urgency,
     urgency_value: urgencyMap[form.urgency] ?? 0,
     history_satisfaction: form.history_satisfaction === null ? null : Number(form.history_satisfaction)
   }
 
-  // 保存历史（local）
+  function normalizePayloadForBackend(raw) {
+    const p = { ...raw }
+
+    // 规范 region：将 cascader 数组转换为 "省/市/区" 标签字符串（若无则设为 ''）
+    try {
+      const vals = Array.isArray(p.region) && p.region.length ? p.region
+        : (Array.isArray(p.region_cascader) && p.region_cascader.length ? p.region_cascader : [])
+      if (Array.isArray(vals) && vals.length) {
+        const opts = (regionOptions && (regionOptions.value || regionOptions)) || []
+        const labels = typeof valuesToLabelsFallback === 'function'
+          ? valuesToLabelsFallback(vals, opts)
+          : vals.map(v => String(v))
+        p.region = labels.join('/')
+      } else {
+        p.region = ''
+      }
+    } catch (e) {
+      p.region = ''
+    }
+
+    // 经济承受：若为 '' 或 '无要求' 或未定义，则从 payload 中删除该字段（避免发送 null）
+    if (p.economic_level === '' || p.economic_level === '无要求' || p.economic_level === undefined || p.economic_level === null) {
+      delete p.economic_level
+    } else {
+      // 确保为数字（否则删除）
+      const n = Number(p.economic_level)
+      if (Number.isNaN(n)) delete p.economic_level
+      else p.economic_level = n
+    }
+
+    // 其它字段类型规范
+    if (p.age !== null && p.age !== undefined && p.age !== '') p.age = Number(p.age)
+    if (p.health_risk !== null && p.health_risk !== undefined && p.health_risk !== '') p.health_risk = Number(p.health_risk)
+    return p
+  }
+
   const entry = {
     id: Date.now(),
     created_at: new Date().toISOString(),
     summary: `${payload.disease_label || payload.disease_code || '未知疾病'} · ${payload.urgency || '未知紧迫性'}`,
-    payload
+    payload,
+    result: []
   }
-  saveHistoryEntry(entry)
 
   try {
-    const res = await api.post('/recommend/', payload, { withCredentials: true })
+    const normalized = normalizePayloadForBackend(payload)
+    const res = await api.post('/recommend/', normalized, { withCredentials: true })
     const results = (res && res.data && res.data.results) ? res.data.results : []
-    // persist to sessionStorage fallback
+    entry.result = results || []
+
+    // 保存历史（登录用户写后端，未登录或失败回退到 local）
+    try { await saveHistoryToServerOrLocal(entry) } catch (err) { console.debug('saveHistory failed', err) }
+
     try {
       sessionStorage.setItem('recommend_payload', JSON.stringify(payload))
       sessionStorage.setItem('recommend_result', JSON.stringify(results))
     } catch (e) {}
+
     router.push({ path: '/result', state: { result: results, payload } })
     ElMessage.success('推荐已完成')
   } catch (e) {
     console.error('recommend API failed', e)
-    ElMessage.error('推荐服务调用失败，使用本地模拟结果')
-    const mock = [
-      { id: 1, name: '市人民医院', address: '市中心路 1 号', specialty: '综合', contact: '010-1111111', recommendation_score: 60 },
-      { id: 2, name: '省肿瘤医院', address: '省道 10 号', specialty: '肿瘤科', contact: '010-2222222', recommendation_score: 65 }
-    ]
+
+    const detail = e?.response?.data?.detail
+    const errors = e?.response?.data?.errors
+    if (detail) {
+      ElMessage.error(String(detail))
+    } else if (errors && typeof errors === 'object') {
+      try {
+        const parts = []
+        for (const k of Object.keys(errors)) {
+          parts.push(`${k}: ${Array.isArray(errors[k]) ? errors[k].join('; ') : String(errors[k])}`)
+        }
+        ElMessage.error(parts.join('；'))
+      } catch (_) {
+        ElMessage.error('请求参数校验失败')
+      }
+    } else {
+      ElMessage.error('推荐服务调用失败，请稍后重试或检查网络')
+    }
+
+    // 保存 payload（result 为空）到历史（后端或本地）
+    try { await saveHistoryToServerOrLocal(entry) } catch (err) { console.debug('saveHistory failed', err) }
+
     try {
       sessionStorage.setItem('recommend_payload', JSON.stringify(payload))
-      sessionStorage.setItem('recommend_result', JSON.stringify(mock))
-    } catch (e) {}
-    router.push({ path: '/result', state: { result: mock, payload } })
+      sessionStorage.setItem('recommend_result', JSON.stringify([]))
+    } catch (err) {}
+
+    router.push({ path: '/result', state: { result: [], payload } })
   } finally {
     loading.value = false
   }

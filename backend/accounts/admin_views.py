@@ -6,6 +6,7 @@ from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from rest_framework.pagination import PageNumberPagination
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import Q
+from .models import User, RecommendationHistory
 
 User = get_user_model()
 
@@ -286,3 +287,15 @@ class AdminOverviewView(APIView):
         recent = AdminListSerializer(recent_qs, many=True, context={'request': request}).data
 
         return Response({'admins': admins, 'recent_logins': recent})
+
+class AdminUserHistoryDeleteView(APIView):
+    """
+    DELETE /api/accounts/admin/users/<pk>/history/
+    管理员清空指定用户的历史记录（仅 is_staff 可用）
+    """
+    permission_classes = [permissions.IsAuthenticated, IsStaff]
+
+    def delete(self, request, pk, *args, **kwargs):
+        # 确保目标用户存在（可选）
+        RecommendationHistory.objects.filter(user_id=pk).delete()
+        return Response({'detail': 'deleted'}, status=200)
