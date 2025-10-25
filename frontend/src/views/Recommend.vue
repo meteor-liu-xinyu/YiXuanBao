@@ -8,7 +8,11 @@
           <el-input v-model="form.name" placeholder="请输入姓名" />
         </el-form-item>
 
-        <el-form-item label="性别">
+        <!-- 必填：性别 -->
+        <el-form-item>
+          <template #label>
+            <span>性别 <span style="color: #f56c6c">*</span></span>
+          </template>
           <el-select v-model="form.gender" placeholder="请选择性别">
             <el-option label="男" value="male" />
             <el-option label="女" value="female" />
@@ -17,11 +21,19 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="年龄">
+        <!-- 必填：年龄 -->
+        <el-form-item>
+          <template #label>
+            <span>年龄 <span style="color: #f56c6c">*</span></span>
+          </template>
           <el-input-number v-model="form.age" :min="0" :max="150" @change="onAgeChange" />
         </el-form-item>
 
-        <el-form-item label="疾病类别（ICD）">
+        <!-- 必填：疾病类别（ICD） -->
+        <el-form-item>
+          <template #label>
+            <span>疾病类别（ICD） <span style="color: #f56c6c">*</span></span>
+          </template>
           <div style="display:flex;align-items:center;gap:8px;width:100%;">
             <el-autocomplete
               v-model="diseaseQuery"
@@ -37,15 +49,12 @@
             >
               <template #default="{ item }">
                 <div v-if="item.type === 'group'" class="icd-group-header">{{ item.label }}</div>
-
                 <div v-else-if="item.type === 'subgroup'" class="icd-subgroup-header" :style="{ paddingLeft: '12px' }">
                   {{ item.label }}
                 </div>
-
                 <div v-else-if="item.type === 'item'" class="icd-item" :style="{ paddingLeft: '24px' }">
                   <div style="font-weight:500;">{{ item.value }}</div>
                 </div>
-
                 <div v-else-if="item.type === 'nomatch'" style="padding:8px 12px;color:#999;">
                   {{ item.value }}
                 </div>
@@ -69,7 +78,7 @@
           />
         </el-form-item>
 
-        <el-form-item label="经济承受能力">
+        <el-form-item label="经济承受能力（可选）">
           <el-select v-model="form.economic_level" placeholder="请选择经济承受能力">
             <el-option label="低（有限）" :value="0" />
             <el-option label="中（一般）" :value="1" />
@@ -77,7 +86,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="就医地/所在地区">
+        <el-form-item label="就医地/所在地区（可选）">
           <el-cascader
             v-model="form.region_cascader"
             :options="regionOptions"
@@ -87,7 +96,11 @@
           />
         </el-form-item>
 
-        <el-form-item label="就医紧迫性">
+        <!-- 必填：就医紧迫性 -->
+        <el-form-item>
+          <template #label>
+            <span>就医紧迫性 <span style="color: #f56c6c">*</span></span>
+          </template>
           <el-select v-model="form.urgency" placeholder="请选择紧迫性" @change="onUrgencyChange">
             <el-option label="急诊" value="emergency" />
             <el-option label="较紧急" value="urgent" />
@@ -142,6 +155,8 @@ import { ElMessage } from 'element-plus'
 import areasData from '@/assets/areas.json'
 import { loadAndFlattenICD, searchICD } from '@/utils/icd-utils'
 import IcdTreeSelector from '@/components/IcdTreeSelector.vue'
+import api from '@/api/api'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const loading = ref(false)
@@ -196,8 +211,76 @@ let icdTimer = null
 const openIcdTree = ref(false)
 const targetTreeKey = ref(null)
 
-// group->sub->item queryICD
-async function queryICD(queryString, cb) {
+// helpers for mapping preferred_region -> cascader values
+function mapLabelsToValues(labels = [], options = []) {
+  if (!labels || !labels.length) return []
+  const values = []
+  let curOpts = options
+  for (const lbl of labels) {
+    if (!curOpts || !curOpts.length) break
+    const found = curOpts.find(o => String(o.label) === String(lbl) || String(o.value) === String(lbl))
+    if (!found) break
+    values.push(found.value)
+    curOpts = found.children || []
+  }
+  return values
+}
+
+/**
+ * 从用户信息中尝试预填表单字段：姓名、性别、年龄、地区
+ */
+async function tryPrefillFromProfile() {
+  try {
+    const store = useUserStore()
+    let data = null
+    // 优先使用 store.userData（如果已加载）
+    if (store.userData && Object.keys(store.userData).length) {
+      data = store.userData
+    } else {
+      // 如果未加载，尝试 fetchUser（会返回 data 或 null）
+      data = await store.fetchUser()
+    }
+    if (!data) return
+
+    // 名字：优先 real_name 或 first+last
+    if (data.real_name) {
+      form.name = data.real_name
+    } else if (data.first_name || data.last_name) {
+      form.name = ((data.first_name || '') + ' ' + (data.last_name || '')).trim()
+    }
+
+    if (data.gender) form.gender = data.gender
+
+    // birthday -> age
+    if (data.birthday) {
+      const b = new Date(data.birthday)
+      if (!isNaN(b.getTime())) {
+        const today = new Date()
+        let age = today.getFullYear() - b.getFullYear()
+        const m = today.getMonth() - b.getMonth()
+        if (m < 0 || (m === 0 && today.getDate() < b.getDate())) age--
+        if (age >= 0 && age <= 150) form.age = age
+      }
+    }
+
+    // region: 优先 preferred_region_values (已为 value 列表)
+    if (Array.isArray(data.preferred_region_values) && data.preferred_region_values.length) {
+      form.region_cascader = data.preferred_region_values.slice()
+    } else if (data.preferred_region && typeof data.preferred_region === 'string') {
+      const labels = data.preferred_region.split('/').map(s => s.trim()).filter(Boolean)
+      if (labels.length) {
+        const mapped = mapLabelsToValues(labels, regionOptions.value)
+        if (mapped && mapped.length) {
+          form.region_cascader = mapped
+        }
+      }
+    }
+  } catch (e) {
+    console.debug('tryPrefillFromProfile failed', e)
+  }
+}
+
+function queryICD(queryString, cb) {
   if (icdTimer) clearTimeout(icdTimer)
   if (!queryString) { cb([]); return }
   icdTimer = setTimeout(async () => {
@@ -249,12 +332,10 @@ async function queryICD(queryString, cb) {
   }, 120)
 }
 
-// input handler: mark user typing (no selection yet)
 function onDiseaseInput(val) {
   selectedFromSuggest.value = false
 }
 
-// select handler: mark selected and fill form
 async function onDiseaseSelect(item) {
   if (!item || item.type !== 'item' || !item.code) return
   selectedFromSuggest.value = true
@@ -264,20 +345,16 @@ async function onDiseaseSelect(item) {
   if (!manualEditHealth.value) recalcHealthRisk()
 }
 
-// blur handler: if user didn't select from suggestions, clear input and code
 function onDiseaseBlur() {
-  // give a small timeout to allow select event to fire first if user clicked a suggestion
   setTimeout(() => {
     if (!selectedFromSuggest.value) {
       diseaseQuery.value = ''
       form.disease_code = ''
     }
-    // reset flag anyway
     selectedFromSuggest.value = false
   }, 120)
 }
 
-// tree select callback
 async function onIcdTreeSelect(payload) {
   if (!payload || !payload.code) {
     ElMessage.warning('请选择一个 ICD 节点')
@@ -288,9 +365,6 @@ async function onIcdTreeSelect(payload) {
   form.disease_vector = []
   if (!manualEditHealth.value) recalcHealthRisk()
 }
-
-// other helpers (prefill / health risk) kept same as before
-async function tryPrefillFromProfile() { return }
 
 function estimateRisk() {
   let score = 10
@@ -316,10 +390,31 @@ function onHealthRiskChange() { manualEditHealth.value = true }
 function undoManualHealth() { manualEditHealth.value = false; recalcHealthRisk() }
 
 function validate() {
-  if (!form.disease_code) { ElMessage.error('请填写或选择疾病类别（ICD）。'); return false }
-  if (form.economic_level === null || form.economic_level === undefined) { ElMessage.error('请选择经济承受能力。'); return false }
-  if (!form.region_cascader || form.region_cascader.length === 0) { ElMessage.error('请填写就医地/所在地区。'); return false }
-  if (!form.urgency) { ElMessage.error('请选择就医紧迫性。'); return false }
+  // 必填项：gender, age, disease_code, urgency
+  if (!form.gender && form.gender !== '') {
+    ElMessage.error('请选择性别')
+    return false
+  }
+  if (form.age === null || form.age === undefined || form.age === '') {
+    ElMessage.error('请填写年龄')
+    return false
+  }
+  // age 必须为数字且在合理范围
+  const ageNum = Number(form.age)
+  if (Number.isNaN(ageNum) || ageNum < 0 || ageNum > 150) {
+    ElMessage.error('请输入有效的年龄（0-150）')
+    return false
+  }
+  if (!form.disease_code) {
+    ElMessage.error('请填写或选择疾病类别（ICD）')
+    return false
+  }
+  if (!form.urgency) {
+    ElMessage.error('请选择就医紧迫性')
+    return false
+  }
+
+  // 其余字段均为可选（经济承受能力、地区等）
   return true
 }
 

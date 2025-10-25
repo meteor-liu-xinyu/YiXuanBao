@@ -28,6 +28,8 @@ class User(AbstractUser):
 
     email = models.EmailField('邮箱地址', blank=True, null=True)  # AbstractUser 已有 email，但可覆盖为可空
     address = models.CharField('联系地址', max_length=255, blank=True, null=True)
+    preferred_region = models.CharField('偏好地区', max_length=255, blank=True, null=True)
+    preferred_region_values = models.JSONField('偏好地区值', blank=True, null=True, default=list)
 
     # 第三方账号
     wechat = models.CharField('微信号', max_length=50, blank=True, null=True)

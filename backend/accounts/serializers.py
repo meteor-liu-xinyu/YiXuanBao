@@ -13,7 +13,7 @@ class UserSerializer(serializers.ModelSerializer):
     - real_name: 组合 first_name + last_name（模型没有 real_name 字段时使用此方法避免 500）
     - birthday 允许不传(required=False)，允许传 null (allow_null=True)，并接受常见输入格式。
     - age: 基于 birthday 计算年龄（若无生日返回 None）
-    - nickname / preferred_region / preferred_specialty 等使用 SerializerMethodField 安全读取（若模型没有对应字段返回 None）
+    - nickname / preferred_region 等使用 SerializerMethodField 安全读取（若模型没有对应字段返回 None）
     """
     avatar = serializers.SerializerMethodField()
     age = serializers.SerializerMethodField()
@@ -25,7 +25,6 @@ class UserSerializer(serializers.ModelSerializer):
     phone = serializers.SerializerMethodField()
     address = serializers.SerializerMethodField()
     preferred_region = serializers.SerializerMethodField()
-    preferred_specialty = serializers.SerializerMethodField()
 
     birthday = serializers.DateField(
         required=False,
@@ -42,7 +41,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'username', 'nickname', 'email', 'gender', 'phone',
             'real_name', 'address', 'birthday',
-            'preferred_region', 'preferred_specialty', 'avatar',
+            'preferred_region', 'avatar',
             'date_joined', 'is_staff', 'is_superuser', 'age'
         )
         read_only_fields = ('id', 'username', 'date_joined', 'is_staff', 'is_superuser')
@@ -99,9 +98,6 @@ class UserSerializer(serializers.ModelSerializer):
     def get_preferred_region(self, obj):
         return getattr(obj, 'preferred_region', None)
 
-    def get_preferred_specialty(self, obj):
-        return getattr(obj, 'preferred_specialty', None)
-
 
 class UserUpdateSerializer(serializers.ModelSerializer):
     """
@@ -127,7 +123,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         fields = (
             'nickname', 'email', 'avatar', 'gender', 'phone',
             'birthday', 'address', 'wechat', 'qq', 'github',
-            'first_name', 'last_name', 'real_name'
+            'first_name', 'last_name', 'real_name',
+            'preferred_region', 'preferred_region_values',
         )
         extra_kwargs = {
             'email': {'required': False, 'allow_blank': True},
@@ -137,6 +134,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             'gender': {'required': False, 'allow_blank': True},
             'phone': {'required': False, 'allow_blank': True},
             'avatar': {'required': False, 'allow_null': True},
+            'preferred_region': {'required': False, 'allow_blank': True},
+            'preferred_region_values': {'required': False},
         }
 
     def validate_birthday(self, value):
