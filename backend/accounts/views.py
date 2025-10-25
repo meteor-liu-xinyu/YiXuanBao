@@ -32,7 +32,7 @@ class GetCSRFTokenView(APIView):
         return Response({'csrftoken': token})
 
 class RegisterView(APIView):
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [AllowAny]
 
     def post(self, request):
         username = request.data.get('username')
@@ -42,11 +42,16 @@ class RegisterView(APIView):
         if User.objects.filter(username=username).exists():
             return Response({'detail': 'username exists'}, status=status.HTTP_400_BAD_REQUEST)
         user = User.objects.create_user(username=username, password=password)
-        return Response({'detail': 'created'}, status=status.HTTP_201_CREATED)
+        # 登录并确保 session 创建
+        login(request, user)
+        # get_token 会确保在响应中设置 csrftoken cookie（由中间件实现）
+        token = get_token(request)
+        res = Response({'detail': 'created', 'username': user.username, 'csrftoken': token}, status=status.HTTP_201_CREATED)
+        return res
 
 
 class LoginView(APIView):
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [AllowAny]
 
     def post(self, request):
         username = request.data.get('username')
@@ -55,7 +60,9 @@ class LoginView(APIView):
         if user is None:
             return Response({'detail': 'invalid credentials'}, status=status.HTTP_400_BAD_REQUEST)
         login(request, user)  # 创建 Session，浏览器会保存 sessionid cookie
-        return Response({'detail': 'logged in', 'username': user.username})
+        token = get_token(request)  # 确保 csrftoken cookie 被设置
+        res = Response({'detail': 'logged in', 'username': user.username, 'csrftoken': token})
+        return res
 
 
 class LogoutView(APIView):
