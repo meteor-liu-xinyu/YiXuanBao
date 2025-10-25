@@ -14,6 +14,7 @@ class UserSerializer(serializers.ModelSerializer):
     - birthday 允许不传(required=False)，允许传 null (allow_null=True)，并接受常见输入格式。
     - age: 基于 birthday 计算年龄（若无生日返回 None）
     - nickname / preferred_region 等使用 SerializerMethodField 安全读取（若模型没有对应字段返回 None）
+    - history: 只读返回用户历史（由后端存储）
     """
     avatar = serializers.SerializerMethodField()
     age = serializers.SerializerMethodField()
@@ -25,6 +26,8 @@ class UserSerializer(serializers.ModelSerializer):
     phone = serializers.SerializerMethodField()
     address = serializers.SerializerMethodField()
     preferred_region = serializers.SerializerMethodField()
+
+    history = serializers.SerializerMethodField()
 
     birthday = serializers.DateField(
         required=False,
@@ -42,7 +45,8 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'username', 'nickname', 'email', 'gender', 'phone',
             'real_name', 'address', 'birthday',
             'preferred_region', 'avatar',
-            'date_joined', 'is_staff', 'is_superuser', 'age'
+            'date_joined', 'is_staff', 'is_superuser', 'age',
+            'history'
         )
         read_only_fields = ('id', 'username', 'date_joined', 'is_staff', 'is_superuser')
 
@@ -98,6 +102,12 @@ class UserSerializer(serializers.ModelSerializer):
     def get_preferred_region(self, obj):
         return getattr(obj, 'preferred_region', None)
 
+    def get_history(self, obj):
+        hist = getattr(obj, 'history', None)
+        if hist is None:
+            return []
+        return hist
+
 
 class UserUpdateSerializer(serializers.ModelSerializer):
     """
@@ -105,6 +115,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     - 接受 write-only 的 real_name 字段（来自前端），会在 update 时映射到模型的 first_name（可根据需求改为拆分）
     - avatar: ImageField 接受 multipart 上传；avatar=None 表示删除头像
     - birthday: 可为空，接受常见格式
+    注意：history 不在此可写字段里，历史需通过独立接口操作
     """
     avatar = serializers.ImageField(required=False, allow_null=True)
     real_name = serializers.CharField(required=False, allow_blank=True, write_only=True)

@@ -36,6 +36,10 @@ class User(AbstractUser):
     qq = models.CharField('QQ号', max_length=20, blank=True, null=True)
     github = models.CharField('GitHub', max_length=100, blank=True, null=True)
 
+    # 新增：历史记录（由前端推荐操作保存至用户模型）
+    # 结构：列表，每项为 dict: { id, created_at, summary, payload, result? }
+    history = models.JSONField('历史记录', blank=True, null=True, default=list)
+
     def __str__(self):
         return self.username
 

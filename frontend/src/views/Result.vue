@@ -24,7 +24,8 @@
     </el-card>
 
     <div v-if="loadingResults" style="text-align:center;padding:24px">
-      <el-spinner /> 正在获取推荐结果...
+      <i class="el-icon-loading" style="font-size:18px;margin-right:8px;vertical-align:middle"></i>
+      正在获取推荐结果...
     </div>
 
     <div v-else-if="!hospitals || hospitals.length === 0" class="no-result">
@@ -251,23 +252,116 @@ function copyPayload() {
   } catch (e) { ElMessage.warning('复制失败') }
 }
 
+/**
+ * 将 p 规范化为后端期望的最小结构并做类型转换（前端在发送前做 defensive normalization）
+ */
+function normalizeForBackend(p = {}) {
+  const out = {}
+
+  out.name = p.name ? String(p.name) : ''
+  out.gender = (p.gender === undefined || p.gender === null) ? '' : String(p.gender)
+
+  const ageRaw = p.age
+  const ageNum = (ageRaw === null || ageRaw === undefined || ageRaw === '') ? null : Number(ageRaw)
+  out.age = Number.isFinite(ageNum) ? Math.floor(ageNum) : null
+
+  out.disease_code = p.disease_code ? String(p.disease_code) : ''
+  out.disease_label = p.disease_label ? String(p.disease_label) : (out.disease_code || '')
+  out.disease_vector = Array.isArray(p.disease_vector) ? p.disease_vector : []
+
+  out.disease_description = p.disease_description ? String(p.disease_description) : ''
+  out.past_history = p.past_history ? String(p.past_history) : ''
+
+  // economic_level: backend expects integer or null
+  if (p.economic_level === '' || p.economic_level === '无要求' || p.economic_level === null || p.economic_level === undefined) {
+    out.economic_level = null
+  } else {
+    const eNum = Number(p.economic_level)
+    out.economic_level = Number.isFinite(eNum) ? Math.round(eNum) : null
+  }
+
+  // region: accept string if already provided; otherwise try to convert array -> labels string
+  if (typeof p.region === 'string' && p.region.trim() !== '') {
+    out.region = p.region
+  } else if (Array.isArray(p.region) && p.region.length) {
+    const labels = valuesToLabelsFallback(p.region, regionOptions)
+    out.region = labels.join('/')
+  } else if (Array.isArray(p.region_cascader) && p.region_cascader.length) {
+    const labels = valuesToLabelsFallback(p.region_cascader, regionOptions)
+    out.region = labels.join('/')
+  } else {
+    out.region = ''
+  }
+
+  const hrRaw = p.health_risk
+  const hrNum = (hrRaw === null || hrRaw === undefined || hrRaw === '') ? null : Number(hrRaw)
+  out.health_risk = Number.isFinite(hrNum) ? Math.round(hrNum) : null
+
+  const allowedUrgency = new Set(['emergency','urgent','routine'])
+  out.urgency = allowedUrgency.has(p.urgency) ? p.urgency : (p.urgency || '')
+
+  const urgencyMap = { emergency: 2, urgent: 1, routine: 0 }
+  out.urgency_value = Number.isFinite(Number(urgencyMap[out.urgency])) ? Number(urgencyMap[out.urgency]) : 0
+
+  const hsRaw = p.history_satisfaction
+  const hsNum = (hsRaw === null || hsRaw === undefined || hsRaw === '') ? null : Number(hsRaw)
+  out.history_satisfaction = Number.isFinite(hsNum) ? Math.round(hsNum) : null
+
+  return out
+}
+
+/**
+ * fetchRecommendationsFromBackend
+ * - 使用 normalizeForBackend 规范化请求
+ * - 在 4xx/5xx 时把后端返回的 body 显示在控制台并提示用户
+ */
 async function fetchRecommendationsFromBackend(p) {
   if (!p) return
+  const normalized = normalizeForBackend(p)
+
+  // sanity checks
+  if (!normalized.disease_code) {
+    ElMessage.warning('请求缺少 disease_code，无法请求后端推荐')
+    return
+  }
+  if (!normalized.urgency) {
+    ElMessage.warning('请求缺少 urgency，无法请求后端推荐')
+    return
+  }
+
   loadingResults.value = true
   try {
-    const res = await api.post('/recommend/', p, { withCredentials: true })
+    const res = await api.post('/recommend/', normalized, { withCredentials: true })
     const results = (res && res.data && res.data.results) ? res.data.results : []
     hospitals.value = results
     try {
-      sessionStorage.setItem('recommend_payload', JSON.stringify(p))
+      sessionStorage.setItem('recommend_payload', JSON.stringify(normalized))
       sessionStorage.setItem('recommend_result', JSON.stringify(results))
     } catch (e) {}
-  } catch (e) {
-    console.error('fetchRecommendationsFromBackend failed', e)
-    ElMessage.error('从推荐服务读取结果失败，使用本地缓存（若有）或显示空结果')
+  } catch (err) {
+    console.error('fetchRecommendationsFromBackend failed', err)
+    const resp = err?.response
+    let detail = ''
+    if (resp && resp.data) {
+      if (typeof resp.data === 'string') detail = resp.data
+      else if (resp.data.detail) detail = resp.data.detail
+      else detail = JSON.stringify(resp.data)
+      console.debug('Backend responded with:', resp.data)
+    } else {
+      detail = err.message || '未知错误'
+    }
+    ElMessage.error('获取推荐结果失败: ' + (detail || err.message || '请查看控制台与后端日志'))
   } finally {
     loadingResults.value = false
   }
+}
+
+function recompute() {
+  if (!payload.value || Object.keys(payload.value).length === 0) {
+    ElMessage.warning('没有可用的请求参数以重新推荐')
+    return
+  }
+  fetchRecommendationsFromBackend(payload.value)
 }
 
 onMounted(() => {

@@ -486,14 +486,27 @@ function loadHistory() {
   }
 }
 
-function saveHistoryEntry(entry) {
+async function saveHistoryEntry(entry) {
   try {
-    const cur = loadHistory()
-    cur.unshift(entry)
-    const limited = cur.slice(0, 200)
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(limited))
+    // 如果登录则保存到后端，否则回落到 localStorage
+    if (isLoggedIn.value) {
+      await api.post('/accounts/history/', entry, { withCredentials: true })
+    } else {
+      const cur = loadHistory()
+      cur.unshift(entry)
+      const limited = cur.slice(0, 200)
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(limited))
+    }
   } catch (e) {
-    console.debug('saveHistoryEntry failed', e)
+    // 回退到本地存储（网络/后端失败）
+    try {
+      const cur = loadHistory()
+      cur.unshift(entry)
+      const limited = cur.slice(0, 200)
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(limited))
+    } catch (err) {
+      console.debug('saveHistoryEntry failed', err)
+    }
   }
 }
 
@@ -504,7 +517,15 @@ async function submit() {
   form.history_satisfaction = historyRating.value
 
   const urgencyMap = { emergency: 2, urgent: 1, routine: 0 }
-  const economicForPayload = (form.economic_level === '无要求') ? '' : form.economic_level
+
+  // economic: backend expects integer or null (null means "not provided" / no requirement)
+  const economicForPayload = (form.economic_level === '无要求' || form.economic_level === '') ? null : form.economic_level
+
+  // region: many backends expect a string like "省/市/区". Convert cascader values -> labels -> join by '/'
+  const regionLabels = Array.isArray(form.region_cascader) && form.region_cascader.length
+    ? valuesToLabelsFallback(form.region_cascader, regionOptions.value)
+    : []
+  const regionForPayload = regionLabels.length ? regionLabels.join('/') : ''
 
   const payload = {
     name: form.name || '',
@@ -515,27 +536,29 @@ async function submit() {
     disease_vector: form.disease_vector || [],
     disease_description: form.disease_description || '',
     past_history: form.past_history || '',
+    // changed: send economic_level as null when no requirement (not empty string)
     economic_level: economicForPayload,
-    region: form.region_cascader,
+    // changed: send region as string (labels joined) to match backend validation requiring string
+    region: regionForPayload,
+    region_values: Array.isArray(form.region_cascader) ? form.region_cascader.slice() : [],
     health_risk: form.health_risk === null ? null : Number(form.health_risk),
     urgency: form.urgency,
     urgency_value: urgencyMap[form.urgency] ?? 0,
     history_satisfaction: form.history_satisfaction === null ? null : Number(form.history_satisfaction)
   }
 
-  // 保存历史（local）
+  // 保存历史（local 或 后端）
   const entry = {
     id: Date.now(),
     created_at: new Date().toISOString(),
     summary: `${payload.disease_label || payload.disease_code || '未知疾病'} · ${payload.urgency || '未知紧迫性'}`,
     payload
   }
-  saveHistoryEntry(entry)
+  await saveHistoryEntry(entry)
 
   try {
     const res = await api.post('/recommend/', payload, { withCredentials: true })
     const results = (res && res.data && res.data.results) ? res.data.results : []
-    // persist to sessionStorage fallback
     try {
       sessionStorage.setItem('recommend_payload', JSON.stringify(payload))
       sessionStorage.setItem('recommend_result', JSON.stringify(results))

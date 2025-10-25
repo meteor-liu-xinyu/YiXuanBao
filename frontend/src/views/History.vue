@@ -67,14 +67,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import areasData from '@/assets/areas.json'
+import api from '@/api/api'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const HISTORY_KEY = 'recommend_history_v1'
 const entries = ref([])
+
+const user = useUserStore()
+const isLoggedIn = computed(() => !!(user.isAuthenticated || user.username))
 
 /* --- region helpers (same approach as Result.vue / Recommend.vue) --- */
 function buildCascaderOptionsFromTree(tree) {
@@ -156,8 +161,18 @@ function formatDate(s) {
   } catch (e) { return s }
 }
 
-/* --- storage operations --- */
-function loadHistory() {
+/* --- storage / backend operations --- */
+async function loadHistoryFromBackend() {
+  try {
+    const res = await api.get('/accounts/history/', { withCredentials: true })
+    if (res && res.data && Array.isArray(res.data.history)) return res.data.history
+  } catch (e) {
+    console.debug('loadHistoryFromBackend failed', e)
+  }
+  return []
+}
+
+function loadHistoryFromLocal() {
   try {
     const raw = localStorage.getItem(HISTORY_KEY)
     if (!raw) return []
@@ -169,27 +184,60 @@ function loadHistory() {
     return []
   }
 }
-function persist(arr) {
+
+function persistLocal(arr) {
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(arr)) } catch (e) { console.debug('persist failed', e) }
 }
 
 /* --- actions --- */
+function removeOneLocal(item) {
+  const remaining = entries.value.filter(x => x.id !== item.id)
+  entries.value = remaining
+  persistLocal(remaining)
+  ElMessage.success('已删除')
+}
+
+async function removeOneBackend(item) {
+  try {
+    await api.delete(`/accounts/history/${item.id}/`, { withCredentials: true })
+    // refresh list
+    const hist = await loadHistoryFromBackend()
+    entries.value = hist || []
+    ElMessage.success('已删除')
+  } catch (e) {
+    ElMessage.error('删除失败')
+  }
+}
+
 function removeOne(item) {
   ElMessageBox.confirm('确认删除该历史项？', '删除', { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' })
-    .then(() => {
-      const remaining = entries.value.filter(x => x.id !== item.id)
-      entries.value = remaining
-      persist(remaining)
-      ElMessage.success('已删除')
+    .then(async () => {
+      if (isLoggedIn.value) await removeOneBackend(item)
+      else removeOneLocal(item)
     }).catch(() => {})
+}
+
+function clearAllLocal() {
+  entries.value = []
+  persistLocal([])
+  ElMessage.success('已清空')
+}
+
+async function clearAllBackend() {
+  try {
+    await api.delete('/accounts/history/', { withCredentials: true })
+    entries.value = []
+    ElMessage.success('已清空')
+  } catch (e) {
+    ElMessage.error('清空失败')
+  }
 }
 
 function clearAll() {
   ElMessageBox.confirm('确认清空全部历史？此操作不可恢复。', '清空历史', { confirmButtonText: '清空', cancelButtonText: '取消', type: 'warning' })
-    .then(() => {
-      entries.value = []
-      persist([])
-      ElMessage.success('已清空')
+    .then(async () => {
+      if (isLoggedIn.value) await clearAllBackend()
+      else clearAllLocal()
     }).catch(() => {})
 }
 
@@ -231,8 +279,13 @@ function goBack() {
   }
 }
 
-onMounted(() => {
-  entries.value = loadHistory()
+onMounted(async () => {
+  if (isLoggedIn.value) {
+    const hist = await loadHistoryFromBackend()
+    entries.value = hist || []
+  } else {
+    entries.value = loadHistoryFromLocal()
+  }
 })
 </script>
 

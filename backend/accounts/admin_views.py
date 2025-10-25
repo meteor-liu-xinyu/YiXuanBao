@@ -59,6 +59,9 @@ class AdminUserSerializer(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField(read_only=True)
     read_real_name = serializers.SerializerMethodField(read_only=True)
 
+    # 新增：history 字段，管理员可见（只读）
+    history = serializers.SerializerMethodField(read_only=True)
+
     first_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     last_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
@@ -85,7 +88,8 @@ class AdminUserSerializer(serializers.ModelSerializer):
             'nickname', 'avatar', 'avatar_url', 'gender', 'phone', 'birthday',
             'address', 'preferred_region', 'preferred_specialty',
             'wechat', 'qq', 'github',
-            'is_active', 'is_staff', 'is_superuser', 'date_joined', 'read_real_name'
+            'is_active', 'is_staff', 'is_superuser', 'date_joined', 'read_real_name',
+            'history'
         )
         read_only_fields = ('id', 'date_joined', 'read_real_name', 'avatar_url')
 
@@ -103,6 +107,12 @@ class AdminUserSerializer(serializers.ModelSerializer):
         last = getattr(obj, 'last_name', '') or ''
         full = (first + ' ' + last).strip()
         return full or None
+
+    def get_history(self, obj):
+        hist = getattr(obj, 'history', None)
+        if hist is None:
+            return []
+        return hist
 
     def _model_field_allows_null(self, model_cls, field_name):
         try:
@@ -227,62 +237,3 @@ class AdminUserSerializer(serializers.ModelSerializer):
             instance.set_password(pwd)
         instance.save()
         return instance
-
-
-class StandardResultsSetPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = 'page_size'
-    max_page_size = 500
-
-
-class AdminUserListCreateView(generics.ListCreateAPIView):
-    permission_classes = [permissions.IsAuthenticated, IsStaff]
-    serializer_class = AdminUserSerializer
-    parser_classes = (MultiPartParser, FormParser, JSONParser)
-    pagination_class = StandardResultsSetPagination
-
-    def get_queryset(self):
-        qs = User.objects.all().order_by('-date_joined')
-        q = self.request.query_params.get('search') or self.request.query_params.get('q')
-        field = self.request.query_params.get('field')
-        if q:
-            q = q.strip()
-            if field == 'username':
-                qs = qs.filter(username__icontains=q)
-            elif field == 'email':
-                qs = qs.filter(email__icontains=q)
-            elif field == 'nickname':
-                qs = qs.filter(nickname__icontains=q)
-            elif field == 'real_name':
-                qs = qs.filter(Q(first_name__icontains=q) | Q(last_name__icontains=q))
-            else:
-                qs = qs.filter(
-                    Q(username__icontains=q) |
-                    Q(email__icontains=q) |
-                    Q(first_name__icontains=q) |
-                    Q(last_name__icontains=q)
-                )
-        return qs
-
-
-class AdminUserRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    permission_classes = [permissions.IsAuthenticated, IsStaff]
-    serializer_class = AdminUserSerializer
-    parser_classes = (MultiPartParser, FormParser, JSONParser)
-    queryset = User.objects.all()
-
-    def perform_destroy(self, instance):
-        instance.delete()
-
-
-class AdminOverviewView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsStaff]
-
-    def get(self, request, *args, **kwargs):
-        admins_qs = User.objects.filter(is_staff=True).order_by('-date_joined')
-        recent_qs = User.objects.filter(last_login__isnull=False).order_by('-last_login')[:20]
-
-        admins = AdminListSerializer(admins_qs, many=True, context={'request': request}).data
-        recent = AdminListSerializer(recent_qs, many=True, context={'request': request}).data
-
-        return Response({'admins': admins, 'recent_logins': recent})
