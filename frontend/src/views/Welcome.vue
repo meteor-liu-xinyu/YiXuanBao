@@ -21,11 +21,20 @@
             >
               {{ isLoggedIn ? '查看个人中心' : '登录/注册' }}
             </el-button>
+
+            <!-- 仅在登录时显示历史记录按钮 -->
+            <el-button
+              v-if="isLoggedIn"
+              class="cta"
+              size="large"
+              @click="onHistoryClick"
+            >
+              历史记录
+            </el-button>
           </div>
         </div>
 
         <div class="features">
-          <!-- 宽屏：三列等高；窄屏：堆叠并居中 -->
           <div class="feature-row">
             <el-col :span="8" class="feature-col">
               <el-card class="feature-card" shadow="hover">
@@ -86,10 +95,14 @@ function onSecondaryClick() {
     router.push('/login')
   }
 }
+
+function onHistoryClick() {
+  router.push('/history')
+}
 </script>
 
 <style scoped>
-/* 统一堆叠时最大宽度，修改这个变量可以同时控制按钮与卡片的等宽 */
+/* 保持原样式 */
 .site-main {
   --center-max-width: 520px;
   padding: 48px 6% 80px;
@@ -101,7 +114,6 @@ function onSecondaryClick() {
 .hero h2 { font-size:2rem; color:#114; margin-bottom:8px; }
 .lead { color:#3a5572; margin-bottom:18px; }
 
-/* 按钮容器（宽屏：并列；窄屏：堆叠） */
 .hero-buttons {
   display:flex;
   gap:16px;
@@ -110,7 +122,6 @@ function onSecondaryClick() {
   align-items:center;
 }
 
-/* 通用 CTA 大按钮样式（宽屏自动调整，窄屏会被限制 max-width） */
 .hero-buttons .el-button.cta {
   height: 60px;
   line-height: 60px;
@@ -124,7 +135,6 @@ function onSecondaryClick() {
   justify-content: center;
 }
 
-/* 窄屏堆叠时按钮等宽（使用 site-main 变量） */
 @media (max-width: 768px) {
   .hero-buttons {
     flex-direction: column;
@@ -141,25 +151,18 @@ function onSecondaryClick() {
   }
 }
 
-/* features 区域：宽屏为三列等高 */
 .features { max-width:1200px; margin:0 auto; padding-top: 20px; }
-
-/* Row 容器：横向排列，元素等高（align-items: stretch） */
 .feature-row {
   display: flex;
   gap: 20px;
   align-items: stretch;
 }
-
-/* 每个列需要设为 flex:1，以平均占位 */
 .feature-col {
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
   min-width: 0;
 }
-
-/* 卡片充满列高度 */
 .feature-card {
   display: flex;
   flex-direction: column;
@@ -169,8 +172,6 @@ function onSecondaryClick() {
   height: 100%;
   box-sizing: border-box;
 }
-
-/* 卡片内部文本 */
 .card-inner {
   display: flex;
   flex-direction: column;
@@ -184,27 +185,25 @@ function onSecondaryClick() {
   text-align: center;
 }
 
-/* 窄屏：堆叠并居中显示卡片，且与按钮保持相同 max-width（等宽） */
 @media (max-width: 768px) {
   .feature-row {
     flex-direction: column;
     gap: 14px;
-    align-items: center; /* 水平居中所有列 */
+    align-items: center;
   }
 
   .feature-col {
     width: 100%;
     display: flex;
-    justify-content: center; /* 使内部 card 水平居中 */
+    justify-content: center;
   }
 
   .feature-card {
     width: 100%;
-    max-width: var(--center-max-width); /* 与按钮一致，确保等宽 */
-    height: auto; /* 按内容撑开高度 */
+    max-width: var(--center-max-width);
+    height: auto;
   }
 }
 
-/* 其它样式 */
 .site-footer { text-align:center; padding:18px; color:#667; background:transparent; }
 </style>

@@ -19,6 +19,7 @@ const routes = [
   { path: '/recommend', component: Recommend },
   { path: '/result', component: Result },
   { path: '/admin', component: Admin, meta: { hideUserMenu: true } },
+  { path: '/history', name: 'History', component: () => import('@/views/History.vue') }
 ]
 
 const router = createRouter({

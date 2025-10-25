@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     # my apps
     'accounts.apps.AccountsConfig',
     'hospital.apps.HospitalConfig',
+    'recommend',
 ]
 
 AUTH_USER_MODEL = 'accounts.User'

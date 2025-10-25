@@ -1,6 +1,10 @@
 <template>
   <div class="admin-page">
-    <h1>管理员面板 — 用户管理</h1>
+    <!-- Header: title + exit button on the right -->
+    <div class="admin-header">
+      <h1>管理员面板</h1>
+      <button class="plain exit-btn" @click="exitAdmin">退出管理员</button>
+    </div>
 
     <!-- 页面级提示栏 -->
     <div v-if="message.visible" :class="['message', message.type]" role="status">
@@ -8,99 +12,150 @@
       <button class="close" @click="hideMessage">×</button>
     </div>
 
-    <div class="admin-controls">
-      <select v-model="searchField">
-        <option value="username">用户名</option>
-        <option value="email">邮箱</option>
-        <option value="real_name">姓名</option>
-        <option value="nickname">昵称</option>
-      </select>
-
-      <input v-model="q" placeholder="搜索用户（按上方字段）" @keyup.enter="searchAdmins" />
-      <button @click="searchAdmins">搜索用户</button>
-      <button @click="clearSearch" v-if="searching">清除搜索</button>
-      <button @click="openCreate">新建用户</button>
-      <button @click="exitAdmin" class="plain">退出管理员</button>
+    <!-- Tabs -->
+    <div class="tabs">
+      <button :class="{ active: activeTab === 'users' }" @click="activeTab = 'users'">用户</button>
+      <button :class="{ active: activeTab === 'hospitals' }" @click="activeTab = 'hospitals'">医院</button>
     </div>
 
-    <div v-if="loading" class="loading">加载中...</div>
+    <!-- Users tab: keep the existing user admin UI -->
+    <section v-show="activeTab === 'users'">
+      <div class="admin-controls">
+        <select v-model="searchField">
+          <option value="username">用户名</option>
+          <option value="email">邮箱</option>
+          <option value="real_name">姓名</option>
+          <option value="nickname">昵称</option>
+        </select>
 
-    <!-- 搜索结果区域 -->
-    <section v-if="!loading && (searchResults.length > 0 || searching)" class="section">
-      <h2>搜索结果（共 {{ searchResults.length }}）</h2>
-      <div v-if="searchResults.length === 0" class="loading">没有匹配的用户</div>
-      <table v-if="searchResults.length > 0" class="admin-table">
-        <thead>
-          <tr>
-            <th>ID</th><th>用户名</th><th>邮箱</th><th>姓名</th><th>注册时间</th><th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="u in searchResults" :key="'search-'+u.id">
-            <td>{{ u.id }}</td>
-            <td>{{ u.username }}</td>
-            <td>{{ u.email || '-' }}</td>
-            <td>{{ (u.first_name || '') + ' ' + (u.last_name || '') }}</td>
-            <td>{{ formatDate(u.date_joined) }}</td>
-            <td>
-              <button @click="openEdit(u)">编辑</button>
-              <button class="danger" @click="confirmDelete(u)">删除</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+        <input v-model="q" placeholder="搜索用户（按上方字段）" @keyup.enter="searchAdmins" />
+        <button @click="searchAdmins">搜索用户</button>
+        <button @click="clearSearch" v-if="searching">清除搜索</button>
+        <button @click="openCreate">新建用户</button>
+      </div>
+
+      <div v-if="loadingUsers" class="loading">加载中...</div>
+
+      <!-- 搜索结果区域 -->
+      <section v-if="!loadingUsers && (searchResults.length > 0 || searching)" class="section">
+        <h2>搜索结果（共 {{ searchResults.length }}）</h2>
+        <div v-if="searchResults.length === 0" class="loading">没有匹配的用户</div>
+        <table v-if="searchResults.length > 0" class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th><th>用户名</th><th>邮箱</th><th>姓名</th><th>注册时间</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="u in searchResults" :key="'search-'+u.id">
+              <td>{{ u.id }}</td>
+              <td>{{ u.username }}</td>
+              <td>{{ u.email || '-' }}</td>
+              <td>{{ (u.first_name || '') + ' ' + (u.last_name || '') }}</td>
+              <td>{{ formatDate(u.date_joined) }}</td>
+              <td>
+                <button @click="openEdit(u)">编辑</button>
+                <button class="danger" @click="confirmDelete(u)">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 管理员列表 -->
+      <section v-if="!loadingUsers" class="section">
+        <h2>管理员账户（共 {{ admins.length }}）</h2>
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th><th>用户名</th><th>邮箱</th><th>姓名</th><th>注册时间</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="u in admins" :key="'admin-'+u.id">
+              <td>{{ u.id }}</td>
+              <td>{{ u.username }}</td>
+              <td>{{ u.email || '-' }}</td>
+              <td>{{ (u.first_name || '') + ' ' + (u.last_name || '') }}</td>
+              <td>{{ formatDate(u.date_joined) }}</td>
+              <td>
+                <button @click="openEdit(u)">编辑</button>
+                <button class="danger" @click="confirmDelete(u)">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 最近登录用户 -->
+      <section v-if="!loadingUsers" class="section" style="margin-top:20px;">
+        <h2>最近登录用户（最近 20 条）</h2>
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th><th>用户名</th><th>邮箱</th><th>最后登录</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="u in recent" :key="'recent-'+u.id">
+              <td>{{ u.id }}</td>
+              <td>{{ u.username }}</td>
+              <td>{{ u.email || '-' }}</td>
+              <td>{{ formatDate(u.last_login) }}</td>
+              <td>
+                <button @click="openEdit(u)">编辑</button>
+                <button class="danger" @click="confirmDelete(u)">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
     </section>
 
-    <!-- 管理员列表 -->
-    <section v-if="!loading" class="section">
-      <h2>管理员账户（共 {{ admins.length }}）</h2>
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <th>ID</th><th>用户名</th><th>邮箱</th><th>姓名</th><th>注册时间</th><th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="u in admins" :key="'admin-'+u.id">
-            <td>{{ u.id }}</td>
-            <td>{{ u.username }}</td>
-            <td>{{ u.email || '-' }}</td>
-            <td>{{ (u.first_name || '') + ' ' + (u.last_name || '') }}</td>
-            <td>{{ formatDate(u.date_joined) }}</td>
-            <td>
-              <button @click="openEdit(u)">编辑</button>
-              <button class="danger" @click="confirmDelete(u)">删除</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <!-- Hospitals tab: new hospital management UI -->
+    <section v-show="activeTab === 'hospitals'">
+      <div class="admin-controls">
+        <select v-model="hospSearchField">
+          <option value="name">名称</option>
+          <option value="specialty">专科</option>
+          <option value="region">地区</option>
+        </select>
+        <input v-model="hospQuery" placeholder="搜索医院（按上方字段）" @keyup.enter="fetchHospitals" />
+        <button @click="fetchHospitals">搜索医院</button>
+        <button @click="clearHospitalSearch" v-if="hospSearching">清除搜索</button>
+        <button @click="openHospitalCreate">新建医院</button>
+      </div>
+
+      <div v-if="loadingHospitals" class="loading">加载中医院数据...</div>
+
+      <section v-if="!loadingHospitals" class="section">
+        <h2>医院列表（共 {{ hospitals.length }}）</h2>
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th><th>名称</th><th>地区</th><th>专科</th><th>等级</th><th>均价</th><th>床位</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="h in hospitals" :key="'hosp-'+h.id">
+              <td>{{ h.id }}</td>
+              <td>{{ h.name }}</td>
+              <td>{{ h.region || '-' }}</td>
+              <td>{{ h.specialty || '-' }}</td>
+              <td>{{ displayGrade(h.grade_level) }}</td>
+              <td>{{ h.avg_cost != null ? h.avg_cost : '-' }}</td>
+              <td>{{ h.bed_count != null ? h.bed_count : '-' }}</td>
+              <td>
+                <button @click="openHospitalEdit(h)">编辑</button>
+                <button class="danger" @click="confirmDeleteHospital(h)">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
     </section>
 
-    <!-- 最近登录用户 -->
-    <section v-if="!loading" class="section" style="margin-top:20px;">
-      <h2>最近登录用户（最近 20 条）</h2>
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <th>ID</th><th>用户名</th><th>邮箱</th><th>最后登录</th><th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="u in recent" :key="'recent-'+u.id">
-            <td>{{ u.id }}</td>
-            <td>{{ u.username }}</td>
-            <td>{{ u.email || '-' }}</td>
-            <td>{{ formatDate(u.last_login) }}</td>
-            <td>
-              <button @click="openEdit(u)">编辑</button>
-              <button class="danger" @click="confirmDelete(u)">删除</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-
-    <!-- 编辑/新建模态 -->
+    <!-- 用户 编辑/新建模态 -->
     <div v-if="modalVisible" class="modal">
       <div class="modal-body">
         <h3>{{ editingUser?.id ? '编辑用户' : '新建用户' }}</h3>
@@ -172,7 +227,7 @@
       </div>
     </div>
 
-    <!-- 删除确认模态（替代 browser confirm） -->
+    <!-- 删除确认模态（用户） -->
     <div v-if="deleteModal.visible" class="modal">
       <div class="modal-body">
         <h3>确认删除</h3>
@@ -184,6 +239,79 @@
       </div>
     </div>
 
+    <!-- 医院 编辑/新建模态 -->
+    <div v-if="hospitalModal.visible" class="modal">
+      <div class="modal-body">
+        <h3>{{ hospitalEditing?.id ? '编辑医院' : '新建医院' }}</h3>
+
+        <label>名称（必填）</label>
+        <input v-model="hospitalForm.name" />
+
+        <label>地区</label>
+        <input v-model="hospitalForm.region" />
+
+        <label>专科</label>
+        <input v-model="hospitalForm.specialty" />
+
+        <label>地址</label>
+        <input v-model="hospitalForm.address" />
+
+        <label>联系方式</label>
+        <input v-model="hospitalForm.contact" />
+
+        <label>等级</label>
+        <select v-model.number="hospitalForm.grade_level">
+          <option :value="0">其他 (0)</option>
+          <option :value="1">一级 (1)</option>
+          <option :value="2">二级甲等 (2)</option>
+          <option :value="3">三级甲等 (3)</option>
+        </select>
+
+        <label>经度 / 纬度</label>
+        <div style="display:flex;gap:8px;">
+          <input v-model.number="hospitalForm.longitude" placeholder="经度" />
+          <input v-model.number="hospitalForm.latitude" placeholder="纬度" />
+        </div>
+
+        <label>平均费用</label>
+        <input v-model.number="hospitalForm.avg_cost" />
+
+        <label>床位数</label>
+        <input v-model.number="hospitalForm.bed_count" />
+
+        <label>专科评分 (0-100)</label>
+        <input v-model.number="hospitalForm.specialty_score" />
+
+        <label>成功率 (0-1)</label>
+        <input v-model.number="hospitalForm.success_rate" step="0.01" />
+
+        <label>平均候诊小时</label>
+        <input v-model.number="hospitalForm.avg_wait_hours" />
+
+        <label>设备评分 (0-100)</label>
+        <input v-model.number="hospitalForm.equipment_score" />
+
+        <label>声誉指数 (0-100)</label>
+        <input v-model.number="hospitalForm.reputation_index" />
+
+        <div class="modal-actions">
+          <button @click="saveHospital" :disabled="hospitalSaving">{{ hospitalSaving ? '保存中...' : '保存' }}</button>
+          <button @click="closeHospitalModal">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 删除确认模态（医院） -->
+    <div v-if="deleteHospitalModal.visible" class="modal">
+      <div class="modal-body">
+        <h3>确认删除医院</h3>
+        <p>确认删除医院 <strong>{{ deleteHospitalModal.target?.name }}</strong> ? 该操作不可恢复。</p>
+        <div class="modal-actions">
+          <button class="danger" @click="removeHospitalConfirmed" :disabled="hospitalSaving">{{ hospitalSaving ? '删除中...' : '确认删除' }}</button>
+          <button @click="closeDeleteHospitalModal">取消</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -196,10 +324,14 @@ import { useUserStore } from '@/stores/user'
 const router = useRouter()
 const store = useUserStore()
 
+// Tabs
+const activeTab = ref('users')
+
+// User state (existing)
 const admins = ref([])
 const recent = ref([])
 const searchResults = ref([])
-const loading = ref(false)
+const loadingUsers = ref(false)
 const q = ref('')
 const searchField = ref('username')
 const searching = ref(false)
@@ -210,10 +342,10 @@ const avatarFile = ref(null)
 const avatarInput = ref(null)
 const saving = ref(false)
 
-// message state for in-page notifications
+// message state
 const message = ref({ visible: false, text: '', type: 'info', timeoutId: null })
 
-// delete modal state
+// delete modal (user)
 const deleteModal = ref({ visible: false, target: null })
 
 const form = ref({
@@ -236,6 +368,35 @@ const form = ref({
   is_active: true
 })
 
+// Hospital state (new)
+const hospitals = ref([])
+const hospQuery = ref('')
+const hospSearchField = ref('name') // 新增：医院搜索字段
+const hospSearching = ref(false)
+const loadingHospitals = ref(false)
+
+const hospitalModal = ref({ visible: false })
+const hospitalEditing = ref(null)
+const hospitalForm = ref({
+  name: '',
+  region: '',
+  specialty: '',
+  address: '',
+  contact: '',
+  grade_level: 0,
+  longitude: null,
+  latitude: null,
+  avg_cost: null,
+  bed_count: null,
+  specialty_score: 50.0,
+  success_rate: 0.8,
+  avg_wait_hours: null,
+  equipment_score: 50.0,
+  reputation_index: 50.0
+})
+const hospitalSaving = ref(false)
+const deleteHospitalModal = ref({ visible: false, target: null })
+
 function showMessage(text, type = 'info', duration = 4000) {
   if (message.value.timeoutId) clearTimeout(message.value.timeoutId)
   message.value.text = text
@@ -252,6 +413,8 @@ function hideMessage() {
   message.value.visible = false
   message.value.timeoutId = null
 }
+
+/* ----------------- User functions (kept from prior implementation) ----------------- */
 
 function confirmDelete(u) {
   deleteModal.value.target = u
@@ -298,8 +461,14 @@ function clearBirthday() {
   form.value.birthday_day = ''
 }
 
+function onAvatarSelect(e) {
+  const f = e.target.files[0]
+  if (!f) return
+  avatarFile.value = f
+}
+
 async function fetchOverview() {
-  loading.value = true
+  loadingUsers.value = true
   try {
     const res = await api.get('/accounts/admin/overview/', { withCredentials: true })
     admins.value = res.data.admins || []
@@ -312,7 +481,7 @@ async function fetchOverview() {
       showMessage('加载管理员概览失败', 'error')
     }
   } finally {
-    loading.value = false
+    loadingUsers.value = false
   }
 }
 
@@ -324,7 +493,7 @@ async function searchAdmins() {
     return fetchOverview()
   }
 
-  loading.value = true
+  loadingUsers.value = true
   searching.value = true
   try {
     const res = await api.get('/accounts/admin/users/', {
@@ -337,7 +506,7 @@ async function searchAdmins() {
     searchResults.value = []
     showMessage('搜索失败，请检查后端或网络', 'error')
   } finally {
-    loading.value = false
+    loadingUsers.value = false
   }
 }
 
@@ -409,12 +578,6 @@ function openCreate() {
 function closeModal() {
   modalVisible.value = false
   editingUser.value = null
-}
-
-function onAvatarSelect(e) {
-  const f = e.target.files[0]
-  if (!f) return
-  avatarFile.value = f
 }
 
 async function saveUser() {
@@ -523,6 +686,151 @@ async function removeUserConfirmed() {
   }
 }
 
+/* ----------------- Hospital functions (new) ----------------- */
+
+function displayGrade(g) {
+  if (g === 3) return '三级甲等 (3)'
+  if (g === 2) return '二级甲等 (2)'
+  if (g === 1) return '一级 (1)'
+  return '其他 (0)'
+}
+
+function clearHospitalSearch() {
+  hospQuery.value = ''
+  hospSearching.value = false
+  fetchHospitals()
+}
+
+async function fetchHospitals() {
+  loadingHospitals.value = true
+  hospSearching.value = !!(hospQuery.value && String(hospQuery.value).trim())
+  try {
+    const params = {}
+    if (hospQuery.value) params.q = hospQuery.value
+    // 将搜索字段一并发送，后端可选用
+    if (hospSearchField.value) params.field = hospSearchField.value
+    const res = await api.get('/hospital/', { params, withCredentials: true })
+    // expected array of hospitals
+    hospitals.value = Array.isArray(res.data) ? res.data : (res.data.results || [])
+  } catch (e) {
+    console.error('fetchHospitals error', e)
+    showMessage('获取医院列表失败', 'error')
+    hospitals.value = []
+  } finally {
+    loadingHospitals.value = false
+  }
+}
+
+function openHospitalCreate() {
+  hospitalEditing.value = null
+  hospitalForm.value = {
+    name: '',
+    region: '',
+    specialty: '',
+    address: '',
+    contact: '',
+    grade_level: 0,
+    longitude: null,
+    latitude: null,
+    avg_cost: null,
+    bed_count: null,
+    specialty_score: 50.0,
+    success_rate: 0.8,
+    avg_wait_hours: null,
+    equipment_score: 50.0,
+    reputation_index: 50.0
+  }
+  hospitalModal.value.visible = true
+}
+
+function openHospitalEdit(h) {
+  hospitalEditing.value = h
+  hospitalForm.value = {
+    name: h.name || '',
+    region: h.region || '',
+    specialty: h.specialty || '',
+    address: h.address || '',
+    contact: h.contact || '',
+    grade_level: h.grade_level || 0,
+    longitude: h.longitude ?? null,
+    latitude: h.latitude ?? null,
+    avg_cost: h.avg_cost ?? null,
+    bed_count: h.bed_count ?? null,
+    specialty_score: h.specialty_score ?? 50.0,
+    success_rate: h.success_rate ?? 0.8,
+    avg_wait_hours: h.avg_wait_hours ?? null,
+    equipment_score: h.equipment_score ?? 50.0,
+    reputation_index: h.reputation_index ?? 50.0
+  }
+  hospitalModal.value.visible = true
+}
+
+function closeHospitalModal() {
+  hospitalModal.value.visible = false
+  hospitalEditing.value = null
+}
+
+async function saveHospital() {
+  if (!hospitalForm.value.name || !String(hospitalForm.value.name).trim()) {
+    showMessage('医院名称为必填项', 'error')
+    return
+  }
+  hospitalSaving.value = true
+  try {
+    const csrftoken = (document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)') || [])[2] || ''
+    const payload = { ...hospitalForm.value }
+    // Ensure numbers are null or numeric
+    Object.keys(payload).forEach(k => {
+      if (payload[k] === '') payload[k] = null
+    })
+    if (!hospitalEditing.value) {
+      const res = await api.post('/hospital/', payload, { withCredentials: true, headers: { 'X-CSRFToken': csrftoken } })
+      showMessage('医院创建成功', 'success')
+    } else {
+      await api.patch(`/hospital/${hospitalEditing.value.id}/`, payload, { withCredentials: true, headers: { 'X-CSRFToken': csrftoken } })
+      showMessage('医院更新成功', 'success')
+    }
+    await fetchHospitals()
+    closeHospitalModal()
+  } catch (e) {
+    console.error('saveHospital error', e)
+    const body = e?.response?.data
+    showMessage('保存医院失败：' + (body ? JSON.stringify(body) : '请检查输入或重试'), 'error')
+  } finally {
+    hospitalSaving.value = false
+  }
+}
+
+function confirmDeleteHospital(h) {
+  deleteHospitalModal.value.target = h
+  deleteHospitalModal.value.visible = true
+}
+
+function closeDeleteHospitalModal() {
+  deleteHospitalModal.value.visible = false
+  deleteHospitalModal.value.target = null
+}
+
+async function removeHospitalConfirmed() {
+  const h = deleteHospitalModal.value.target
+  if (!h) return
+  const csrftoken = (document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)') || [])[2] || ''
+  hospitalSaving.value = true
+  try {
+    await api.delete(`/hospital/${h.id}/`, { withCredentials: true, headers: { 'X-CSRFToken': csrftoken } })
+    hospitals.value = hospitals.value.filter(x => x.id !== h.id)
+    showMessage('医院删除成功', 'success')
+    closeDeleteHospitalModal()
+    await fetchHospitals()
+  } catch (e) {
+    console.error(e)
+    showMessage('删除医院失败', 'error')
+  } finally {
+    hospitalSaving.value = false
+  }
+}
+
+/* ----------------- Lifecycle & auth check ----------------- */
 function exitAdmin() {
   router.replace('/welcome')
 }
@@ -536,12 +844,24 @@ onMounted(async () => {
     router.replace('/welcome')
     return
   }
+  // load both users and hospitals initially
   fetchOverview()
+  fetchHospitals()
 })
 </script>
 
 <style scoped>
 .admin-page { padding: 24px; }
+
+/* Header: title + exit button */
+.admin-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.admin-header h1 { margin:0; font-size:1.5rem; }
+.exit-btn { background: transparent; color: #6a85e6; border: 1px solid rgba(106,133,230,0.14); padding:6px 10px; border-radius:6px; cursor:pointer; }
+
+/* Tabs */
+.tabs { display:flex; gap:8px; margin-bottom:12px; }
+.tabs button { padding:8px 12px; border-radius:6px; border:1px solid #e6e6e6; background:#f7f7f7; cursor:pointer }
+.tabs button.active { background:#3b82f6; color:#fff; border-color:#3b82f6 }
 .admin-controls { display:flex; gap:8px; margin-bottom:12px; align-items:center; }
 .admin-controls .plain { background: transparent; color: #6a85e6; border: 1px solid rgba(106,133,230,0.14); padding:6px 10px; border-radius:6px; cursor:pointer; }
 .section { margin-bottom: 18px; }

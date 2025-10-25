@@ -1,7 +1,11 @@
 <template>
   <div class="page">
     <el-card style="max-width:900px;margin:20px auto">
-      <h2>填写信息，推荐医院</h2>
+      <!-- header: title + history button (visible only when logged in) -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2 style="margin:0">填写信息，推荐医院</h2>
+        <el-button v-if="isLoggedIn" type="primary" plain @click="goHistory">历史记录</el-button>
+      </div>
 
       <el-form :model="form" label-width="160px" label-position="right">
         <el-form-item label="姓名（可选）">
@@ -80,6 +84,7 @@
 
         <el-form-item label="经济承受能力（可选）">
           <el-select v-model="form.economic_level" placeholder="请选择经济承受能力">
+            <el-option label="无要求" :value="'无要求'" />
             <el-option label="低（有限）" :value="0" />
             <el-option label="中（一般）" :value="1" />
             <el-option label="高（宽裕）" :value="2" />
@@ -148,8 +153,8 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { reactive, ref, onMounted, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
 import areasData from '@/assets/areas.json'
@@ -159,7 +164,19 @@ import api from '@/api/api'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
+
+// user / login state
+const user = useUserStore()
+const isLoggedIn = computed(() => !!(user.isAuthenticated || user.username))
+
+function goHistory() {
+  router.push('/history')
+}
+
+// history storage key
+const HISTORY_KEY = 'recommend_history_v1'
 
 // main form
 const form = reactive({
@@ -170,7 +187,7 @@ const form = reactive({
   disease_vector: [],
   disease_description: '',
   past_history: '',
-  economic_level: null,
+  economic_level: '无要求',
   region_cascader: [],
   urgency: '',
   health_risk: null,
@@ -211,7 +228,7 @@ let icdTimer = null
 const openIcdTree = ref(false)
 const targetTreeKey = ref(null)
 
-// helpers for mapping preferred_region -> cascader values
+/* ---------- helpers (kept same as existing implementation) ---------- */
 function mapLabelsToValues(labels = [], options = []) {
   if (!labels || !labels.length) return []
   const values = []
@@ -226,32 +243,43 @@ function mapLabelsToValues(labels = [], options = []) {
   return values
 }
 
-/**
- * 从用户信息中尝试预填表单字段：姓名、性别、年龄、地区
- */
-async function tryPrefillFromProfile() {
+async function tryPrefillFromProfileOrRoute() {
   try {
+    // sessionStorage fallback first
+    try {
+      const raw = sessionStorage.getItem('recommend_prefill')
+      if (raw) {
+        const obj = JSON.parse(raw)
+        if (obj) {
+          applyPrefill(obj)
+          sessionStorage.removeItem('recommend_prefill')
+          return
+        }
+      }
+    } catch (e) {}
+
+    // route.state prefill
+    const prefillFromRoute = route?.state?.prefill
+    if (prefillFromRoute) {
+      applyPrefill(prefillFromRoute)
+      try { sessionStorage.removeItem('recommend_prefill') } catch (e) {}
+      return
+    }
+
+    // user profile
     const store = useUserStore()
     let data = null
-    // 优先使用 store.userData（如果已加载）
     if (store.userData && Object.keys(store.userData).length) {
       data = store.userData
     } else {
-      // 如果未加载，尝试 fetchUser（会返回 data 或 null）
       data = await store.fetchUser()
     }
     if (!data) return
 
-    // 名字：优先 real_name 或 first+last
-    if (data.real_name) {
-      form.name = data.real_name
-    } else if (data.first_name || data.last_name) {
-      form.name = ((data.first_name || '') + ' ' + (data.last_name || '')).trim()
-    }
-
+    if (data.real_name) form.name = data.real_name
+    else if (data.first_name || data.last_name) form.name = ((data.first_name || '') + ' ' + (data.last_name || '')).trim()
     if (data.gender) form.gender = data.gender
 
-    // birthday -> age
     if (data.birthday) {
       const b = new Date(data.birthday)
       if (!isNaN(b.getTime())) {
@@ -263,21 +291,43 @@ async function tryPrefillFromProfile() {
       }
     }
 
-    // region: 优先 preferred_region_values (已为 value 列表)
     if (Array.isArray(data.preferred_region_values) && data.preferred_region_values.length) {
       form.region_cascader = data.preferred_region_values.slice()
     } else if (data.preferred_region && typeof data.preferred_region === 'string') {
       const labels = data.preferred_region.split('/').map(s => s.trim()).filter(Boolean)
       if (labels.length) {
         const mapped = mapLabelsToValues(labels, regionOptions.value)
-        if (mapped && mapped.length) {
-          form.region_cascader = mapped
-        }
+        if (mapped && mapped.length) form.region_cascader = mapped
       }
     }
   } catch (e) {
-    console.debug('tryPrefillFromProfile failed', e)
+    console.debug('tryPrefillFromProfileOrRoute failed', e)
   }
+}
+
+function applyPrefill(obj = {}) {
+  try {
+    if (obj.name) form.name = obj.name
+    if (obj.gender !== undefined) form.gender = obj.gender
+    if (obj.age !== undefined) form.age = obj.age
+    if (obj.disease_label) {
+      diseaseQuery.value = obj.disease_label
+      form.disease_code = obj.disease_code || ''
+    } else if (obj.disease_code) {
+      form.disease_code = obj.disease_code
+      diseaseQuery.value = obj.disease_code
+    }
+    if (Array.isArray(obj.region)) form.region_cascader = obj.region.slice()
+    if (obj.economic_level !== undefined) {
+      if (obj.economic_level === '') form.economic_level = '无要求'
+      else form.economic_level = obj.economic_level
+    }
+    if (obj.urgency) form.urgency = obj.urgency
+    if (obj.health_risk !== undefined) form.health_risk = obj.health_risk
+    if (obj.past_history) form.past_history = obj.past_history
+    if (obj.disease_description) form.disease_description = obj.disease_description
+    if (obj.history_satisfaction !== undefined) historyRating.value = obj.history_satisfaction
+  } catch (e) { console.debug('applyPrefill failed', e) }
 }
 
 function queryICD(queryString, cb) {
@@ -291,30 +341,25 @@ function queryICD(queryString, cb) {
         cb([{ type: 'nomatch', value: '未匹配到' }])
         return
       }
-
       const results = []
       const topSeen = new Set()
       const subSeenMap = new Map()
-
       for (const it of matched) {
         const path = Array.isArray(it.path) ? it.path : []
         const top = path[0] || { code: '__OTHER__', name: '其它' }
         const sub = path[1] || null
-
         const topLabel = top.code ? (top.code + (top.name ? ' ' + top.name : '')) : (top.name || '__OTHER__')
         if (!topSeen.has(topLabel)) {
           results.push({ type: 'group', label: topLabel })
           topSeen.add(topLabel)
           subSeenMap.set(topLabel, new Set())
         }
-
         const subLabel = sub ? (sub.code ? (sub.code + (sub.name ? ' ' + sub.name : '')) : sub.name) : '__no_sub__'
         const subSeen = subSeenMap.get(topLabel)
         if (sub && !subSeen.has(subLabel)) {
           results.push({ type: 'subgroup', label: subLabel, level: 1 })
           subSeen.add(subLabel)
         }
-
         results.push({
           type: 'item',
           value: `${it.code}${it.name ? ' ' + it.name : ''}`,
@@ -323,7 +368,6 @@ function queryICD(queryString, cb) {
           level: 2
         })
       }
-
       cb(results)
     } catch (e) {
       console.warn('ICD 本地加载/搜索出错', e)
@@ -332,9 +376,7 @@ function queryICD(queryString, cb) {
   }, 120)
 }
 
-function onDiseaseInput(val) {
-  selectedFromSuggest.value = false
-}
+function onDiseaseInput(val) { selectedFromSuggest.value = false }
 
 async function onDiseaseSelect(item) {
   if (!item || item.type !== 'item' || !item.code) return
@@ -390,7 +432,6 @@ function onHealthRiskChange() { manualEditHealth.value = true }
 function undoManualHealth() { manualEditHealth.value = false; recalcHealthRisk() }
 
 function validate() {
-  // 必填项：gender, age, disease_code, urgency
   if (!form.gender && form.gender !== '') {
     ElMessage.error('请选择性别')
     return false
@@ -399,7 +440,6 @@ function validate() {
     ElMessage.error('请填写年龄')
     return false
   }
-  // age 必须为数字且在合理范围
   const ageNum = Number(form.age)
   if (Number.isNaN(ageNum) || ageNum < 0 || ageNum > 150) {
     ElMessage.error('请输入有效的年龄（0-150）')
@@ -413,8 +453,6 @@ function validate() {
     ElMessage.error('请选择就医紧迫性')
     return false
   }
-
-  // 其余字段均为可选（经济承受能力、地区等）
   return true
 }
 
@@ -425,7 +463,7 @@ function reset() {
   diseaseQuery.value = ''
   form.disease_description = ''
   form.past_history = ''
-  form.economic_level = null
+  form.economic_level = '无要求'
   form.region_cascader = []
   form.urgency = ''
   form.health_risk = null
@@ -434,21 +472,50 @@ function reset() {
   manualEditHealth.value = false
 }
 
+/* -- 历史保存相关 -- */
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY)
+    if (!raw) return []
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr)) return []
+    return arr
+  } catch (e) {
+    console.debug('loadHistory failed', e)
+    return []
+  }
+}
+
+function saveHistoryEntry(entry) {
+  try {
+    const cur = loadHistory()
+    cur.unshift(entry)
+    const limited = cur.slice(0, 200)
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(limited))
+  } catch (e) {
+    console.debug('saveHistoryEntry failed', e)
+  }
+}
+
+/* ---------- submit -> call backend recommend API and handle response ---------- */
 async function submit() {
   if (!validate()) return
   loading.value = true
   form.history_satisfaction = historyRating.value
 
   const urgencyMap = { emergency: 2, urgent: 1, routine: 0 }
+  const economicForPayload = (form.economic_level === '无要求') ? '' : form.economic_level
+
   const payload = {
     name: form.name || '',
     gender: form.gender || '',
     age: form.age === null ? null : Number(form.age),
     disease_code: form.disease_code,
+    disease_label: diseaseQuery.value || (form.disease_code || ''),
     disease_vector: form.disease_vector || [],
     disease_description: form.disease_description || '',
     past_history: form.past_history || '',
-    economic_level: form.economic_level,
+    economic_level: economicForPayload,
     region: form.region_cascader,
     health_risk: form.health_risk === null ? null : Number(form.health_risk),
     urgency: form.urgency,
@@ -456,15 +523,45 @@ async function submit() {
     history_satisfaction: form.history_satisfaction === null ? null : Number(form.history_satisfaction)
   }
 
-  console.log('本地提交 payload:', payload)
-  ElMessage.success('已在前端模拟提交（未调用后端）。查看控制台 payload。')
-  try { router.push({ path: '/result', state: { result: [] } }) } catch (e) {}
-  finally { loading.value = false }
+  // 保存历史（local）
+  const entry = {
+    id: Date.now(),
+    created_at: new Date().toISOString(),
+    summary: `${payload.disease_label || payload.disease_code || '未知疾病'} · ${payload.urgency || '未知紧迫性'}`,
+    payload
+  }
+  saveHistoryEntry(entry)
+
+  try {
+    const res = await api.post('/recommend/', payload, { withCredentials: true })
+    const results = (res && res.data && res.data.results) ? res.data.results : []
+    // persist to sessionStorage fallback
+    try {
+      sessionStorage.setItem('recommend_payload', JSON.stringify(payload))
+      sessionStorage.setItem('recommend_result', JSON.stringify(results))
+    } catch (e) {}
+    router.push({ path: '/result', state: { result: results, payload } })
+    ElMessage.success('推荐已完成')
+  } catch (e) {
+    console.error('recommend API failed', e)
+    ElMessage.error('推荐服务调用失败，使用本地模拟结果')
+    const mock = [
+      { id: 1, name: '市人民医院', address: '市中心路 1 号', specialty: '综合', contact: '010-1111111', recommendation_score: 60 },
+      { id: 2, name: '省肿瘤医院', address: '省道 10 号', specialty: '肿瘤科', contact: '010-2222222', recommendation_score: 65 }
+    ]
+    try {
+      sessionStorage.setItem('recommend_payload', JSON.stringify(payload))
+      sessionStorage.setItem('recommend_result', JSON.stringify(mock))
+    } catch (e) {}
+    router.push({ path: '/result', state: { result: mock, payload } })
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(async () => {
   regionOptions.value = buildCascaderOptionsFromTree(areasData)
-  try { await tryPrefillFromProfile() } catch (e) {}
+  try { await tryPrefillFromProfileOrRoute() } catch (e) {}
   if (!manualEditHealth.value) recalcHealthRisk()
 })
 </script>

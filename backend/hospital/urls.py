@@ -1,6 +1,12 @@
 from django.urls import path
-from .views import RecommendHospitalView
+from .views import (
+    HospitalListCreateView,
+    HospitalRetrieveUpdateDestroyView,
+    RecommendHospitalView
+)
 
 urlpatterns = [
+    path('', HospitalListCreateView.as_view(), name='hospital-list'),
+    path('<int:pk>/', HospitalRetrieveUpdateDestroyView.as_view(), name='hospital-detail'),
     path('recommend/', RecommendHospitalView.as_view(), name='recommend'),
 ]
