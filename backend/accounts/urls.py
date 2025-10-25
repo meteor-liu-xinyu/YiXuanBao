@@ -5,7 +5,8 @@ from .views import (
     LoginView,
     LogoutView,
     UserInfoView,
-    GetCSRFTokenView,  # 新增导入
+    GetCSRFTokenView,
+    CheckUsernameView,
 )
 
 from .admin_views import AdminUserListCreateView, AdminUserRetrieveUpdateDestroyView, AdminOverviewView
@@ -16,6 +17,7 @@ urlpatterns = [
     path('logout/', LogoutView.as_view(), name='logout'),
     path('userinfo/', UserInfoView.as_view(), name='userinfo'),
     path('csrf/', GetCSRFTokenView.as_view(), name='csrf'),
+    path('check-username/', CheckUsernameView.as_view(), name='check-username'),
     # Admin API - 仅供管理员使用
     path('admin/users/', AdminUserListCreateView.as_view(), name='admin-user-list'),
     path('admin/users/<int:pk>/', AdminUserRetrieveUpdateDestroyView.as_view(), name='admin-user-detail'),

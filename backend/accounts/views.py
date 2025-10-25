@@ -4,11 +4,13 @@ from rest_framework import permissions, status
 from django.contrib.auth import authenticate, login, logout
 from django.db import transaction
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.permissions import AllowAny
 from .serializers import UserSerializer, UserUpdateSerializer
 from .models import User
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.middleware.csrf import get_token
+from django.conf import settings
 
 # 以下用于服务器端图片处理（可选）
 from django.core.files.uploadedfile import InMemoryUploadedFile
@@ -170,3 +172,20 @@ class UserInfoView(APIView):
             user.refresh_from_db()
             out = UserSerializer(user, context={'request': request}).data
             return Response(out, status=status.HTTP_200_OK)
+
+class CheckUsernameView(APIView):
+    """
+    GET /api/accounts/check-username/?username=xxx
+    返回 JSON:
+      { "exists": true/false, "available": true/false }
+    允许未登录访问
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        username = request.query_params.get('username', '') or ''
+        username = str(username).strip()
+        if username == '':
+            return Response({'detail': 'username required'}, status=status.HTTP_400_BAD_REQUEST)
+        exists = User.objects.filter(username=username).exists()
+        return Response({'exists': exists, 'available': not exists})
