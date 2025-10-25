@@ -9,23 +9,12 @@ from .models import User
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.middleware.csrf import get_token
-from django.conf import settings
 
 # 以下用于服务器端图片处理（可选）
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from PIL import Image
 import io
 
-from django.utils import timezone
-
-# History APIs for authenticated users:
-# GET  /api/accounts/history/            -> list user's history
-# POST /api/accounts/history/            -> push new history entry (entry in request.data)
-# DELETE /api/accounts/history/          -> clear all history
-# DELETE /api/accounts/history/<int:pk>/ -> delete single entry by id
-#
-# Entry format expected: dict with optional keys id, created_at, summary, payload, result
-# Server will ensure id and created_at if missing. Keep history list capped (e.g., 200 items).
 
 @method_decorator(ensure_csrf_cookie, name='dispatch')
 class GetCSRFTokenView(APIView):
@@ -181,61 +170,3 @@ class UserInfoView(APIView):
             user.refresh_from_db()
             out = UserSerializer(user, context={'request': request}).data
             return Response(out, status=status.HTTP_200_OK)
-
-
-class UserHistoryView(APIView):
-    """
-    用户历史记录接口（基于登录用户）：
-    GET  /api/accounts/history/            -> 返回列表
-    POST /api/accounts/history/            -> 新增一条（body: entry dict）
-    DELETE /api/accounts/history/          -> 清空全部
-    DELETE /api/accounts/history/<int:pk>/ -> 删除单条
-    """
-    permission_classes = [permissions.IsAuthenticated]
-    parser_classes = (JSONParser, FormParser, MultiPartParser)
-
-    MAX_HISTORY = 200
-
-    def get(self, request, *args, **kwargs):
-        user = request.user
-        hist = getattr(user, 'history', None) or []
-        return Response({'history': hist})
-
-    def post(self, request, *args, **kwargs):
-        user = request.user
-        entry = request.data or {}
-        try:
-            # ensure id + created_at
-            eid = entry.get('id') or int(timezone.now().timestamp() * 1000)
-            entry['id'] = eid
-            entry['created_at'] = entry.get('created_at') or timezone.now().isoformat()
-        except Exception:
-            entry['id'] = int(timezone.now().timestamp() * 1000)
-            entry['created_at'] = timezone.now().isoformat()
-
-        hist = getattr(user, 'history', None) or []
-        # push to front, dedupe by id
-        new_hist = [entry] + [h for h in hist if h.get('id') != entry['id']]
-        # cap
-        new_hist = new_hist[: self.MAX_HISTORY]
-        user.history = new_hist
-        user.save(update_fields=['history'])
-        return Response({'history': new_hist}, status=status.HTTP_201_CREATED)
-
-    def delete(self, request, pk=None, *args, **kwargs):
-        user = request.user
-        # if pk provided in kwargs -> delete single
-        if pk is not None:
-            try:
-                pid = int(pk)
-            except Exception:
-                return Response({'detail': 'invalid id'}, status=status.HTTP_400_BAD_REQUEST)
-            hist = getattr(user, 'history', None) or []
-            remaining = [h for h in hist if h.get('id') != pid]
-            user.history = remaining
-            user.save(update_fields=['history'])
-            return Response({'history': remaining}, status=status.HTTP_200_OK)
-        # else clear all
-        user.history = []
-        user.save(update_fields=['history'])
-        return Response({'history': []}, status=status.HTTP_200_OK)
