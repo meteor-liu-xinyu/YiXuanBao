@@ -1,14 +1,21 @@
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = "django-insecure-$1&#+a6s=djh3mp8gtb(kh+u(!hyd+#5ig9^z0li*eefbwd_^7"
+# Load .env from project root (BASE_DIR)
+load_dotenv(BASE_DIR / '.env')
 
-DEBUG = True
+# Security
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-replace-me-for-dev')
 
-ALLOWED_HOSTS = ['*']
+# DEBUG should be False in production; accept 'True'/'False' strings or boolean-like values
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('1', 'true', 'yes')
 
+# ALLOWED_HOSTS can be a comma-separated list in the env var
+_allowed = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost')
+ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
 
 # Application definition
 
@@ -61,15 +68,15 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "backend.wsgi.application"
 
-
+# Database configuration from environment variables
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'yxbao_db',
-        'USER': 'meteor',
-        'PASSWORD': 'Xinyu03!*',
-        'HOST': '127.0.0.1',
-        'PORT': '3306',
+        'NAME': os.getenv('DB_NAME', 'yxbao_db'),
+        'USER': os.getenv('DB_USER', 'meteor'),
+        'PASSWORD': os.getenv('DB_PASSWORD', ''),
+        'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+        'PORT': os.getenv('DB_PORT', '3306'),
         'OPTIONS': {'charset': 'utf8mb4'},
     }
 }
@@ -111,25 +118,22 @@ REST_FRAMEWORK = {
     )
 }
 
-# 允许跨域凭证（开发）
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",  # 前端 dev server
-]
+# CORS & CSRF - allow list can be configured via env
+_cors = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173')
+CORS_ALLOWED_ORIGINS = [u.strip() for u in _cors.split(',') if u.strip()]
 
-# 让 Django 信任前端 origin（Django CSRF 的 origin 检查要求 scheme+host）
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
-]
+CSRF_TRUSTED_ORIGINS = [u.strip() for u in os.getenv('CSRF_TRUSTED_ORIGINS', 'http://localhost:5173').split(',') if u.strip()]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# CORS 与 CSRF（开发）
+# Development-friendly cookie settings; change for production
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = True
-CSRF_COOKIE_NAME = "csrftoken"
+# If you want to allow all origins (not recommended in production), set via env:
+if os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('1', 'true', 'yes'):
+    CORS_ALLOW_ALL_ORIGINS = True
 
-# cookie 设置（开发环境）
-SESSION_COOKIE_SAMESITE = 'Lax'  # 'Lax' 通常允许 top-level 导航携带 cookie；跨站 POST 可能受限
-SESSION_COOKIE_SECURE = False    # 开发时 false；生产用 https 时设为 True
-CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_SECURE = False
+CSRF_COOKIE_NAME = "csrftoken"
+SESSION_COOKIE_SAMESITE = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
+SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'False').lower() in ('1', 'true', 'yes')
+CSRF_COOKIE_SAMESITE = os.getenv('CSRF_COOKIE_SAMESITE', 'Lax')
+CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'False').lower() in ('1', 'true', 'yes')
