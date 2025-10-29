@@ -44,4 +44,4 @@ sleep 15
 docker-compose ps
 
 echo -e "\n${GREEN}✅ 部署完成！${NC}"
-echo -e "🌐 访问: http://YOUR_SERVER_IP\n"
+echo -e "🌐 访问: http://8.137.164.174\n"

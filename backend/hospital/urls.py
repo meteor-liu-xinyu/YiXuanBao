@@ -1,4 +1,6 @@
 from django.urls import path
+from django.http import JsonResponse
+from django.views import View
 from .views import (
     HospitalListCreateView,
     HospitalRetrieveUpdateDestroyView,
