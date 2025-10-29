@@ -49,3 +49,4 @@ frontend/dist/
 .vscode/
 .idea/
 *.swp
+/docker-compose.local.yml
