@@ -13,10 +13,17 @@ def api_root(request):
             'accounts': '/api/accounts/',
             'hospital': '/api/hospital/',
             'recommend': '/api/recommend/',
+            'django_admin': '/django-admin/',
         }
     })
 
+# ⭐ 自定义 Django Admin 标题
+admin.site.site_header = "YiXuanBao Django 后台管理"
+admin.site.site_title = "YiXuanBao 管理"
+admin.site.index_title = "欢迎来到 YiXuanBao 管理后台"
+
 urlpatterns = [
+    path("django-admin/", admin.site.urls),
     path("admin/", admin.site.urls),
     path('api/', api_root),
     path('api/accounts/', include('accounts.urls')),
