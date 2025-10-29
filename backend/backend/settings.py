@@ -4,13 +4,23 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load .env from project root (BASE_DIR)
-load_dotenv(BASE_DIR / '.env')
+# ⭐ 智能加载环境变量：优先生产环境，其次开发环境
+# 生产环境（Docker）：从项目根目录加载 .env.production
+env_production = BASE_DIR.parent / '.env.production'
+# 开发环境（本地）：从 backend/ 目录加载 .env
+env_development = BASE_DIR / '.env'
+
+if env_production.exists():
+    load_dotenv(env_production)
+    print("✅ 加载生产环境配置: .env.production")
+elif env_development.exists():
+    load_dotenv(env_development)
+    print("✅ 加载开发环境配置: backend/.env")
+else:
+    print("⚠️ 未找到环境配置文件")
 
 # Security
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-replace-me-for-dev')
-
-# DEBUG should be False in production; accept 'True'/'False' strings or boolean-like values
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fallback-key')
 DEBUG = os.getenv('DEBUG', 'False').lower() in ('1', 'true', 'yes')
 
 # ALLOWED_HOSTS can be a comma-separated list in the env var
@@ -106,6 +116,11 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 

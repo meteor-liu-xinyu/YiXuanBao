@@ -11,11 +11,9 @@ node_modules
 dist
 dist-ssr
 *.local
-__pycache__/*
 migrations/*
 
 # Editor directories and files
-.vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
@@ -25,6 +23,29 @@ migrations/*
 *.sln
 *.sw?
 
-# else
-/backend/media
-/backend/.env
+# 环境变量文件（敏感信息）
+.env
+.env.local
+.env.production
+backend/.env
+backend/.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+
+# Django
+db.sqlite3
+media/
+staticfiles/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
