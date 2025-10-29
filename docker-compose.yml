@@ -6,8 +6,8 @@ services:
     environment:
       MYSQL_DATABASE: yxbao_db
       MYSQL_USER: yxbao_user
-      MYSQL_PASSWORD: ${DB_PASSWORD}  # ⭐ 从环境变量读取
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}  # ⭐ 从环境变量读取
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
     ports:
