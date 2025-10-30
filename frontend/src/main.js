@@ -22,14 +22,23 @@ async function initAuth() {
     console.warn('csrf fetch failed', e)
   }
 
-  // 无条件尝试拉取当前用户信息（如果存在会话/凭证应该返回用户）
-  // 使用 try/catch 包裹以防止未捕获的 promise 或阻塞 mount 流程
-  try {
-    const user = useUserStore()
-    await user.fetchUser()
-  } catch (e) {
-    // 如果拉取失败（401/403/网络错误等），记录但不要中止应用挂载
-    console.warn('fetchUser failed while initializing auth', e)
+  // ⭐⭐⭐ 关键修改：只在有 session cookie 时才尝试恢复用户信息 ⭐⭐⭐
+  const hasSession = document.cookie.includes('sessionid=')
+  
+  if (hasSession) {
+    try {
+      const user = useUserStore()
+      await user.fetchUser()
+    } catch (e) {
+      // 会话无效或过期，静默处理
+      if (e.response?.status === 401 || e.response?.status === 403) {
+        console.warn('Session invalid, cleared auth state')
+        const user = useUserStore()
+        user.clearAuth()
+      } else {
+        console.warn('fetchUser failed while initializing auth', e)
+      }
+    }
   }
 }
 

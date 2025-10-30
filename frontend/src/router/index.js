@@ -86,12 +86,14 @@ router.beforeEach(async (to, from, next) => {
     return next({ path: '/' })
   }
 
-  // 2) ⭐ 会话恢复：只要未认证就尝试恢复
-  if (!userStore.isAuthenticated) {
+  // 2) ⭐⭐⭐ 修改：只在需要认证的路由才恢复会话 ⭐⭐⭐
+  const needsAuth = to.meta?.requiresAuth || to.meta?.requiresAdmin
+  
+  if (needsAuth && !userStore.isAuthenticated) {
     try {
       await userStore.fetchUser()
     } catch (e) {
-      // ignore fetch errors
+      // 会话恢复失败，继续后面的逻辑
     }
   }
 

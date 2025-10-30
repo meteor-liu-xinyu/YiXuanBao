@@ -49,9 +49,16 @@ export const useUserStore = defineStore('user', () => {
         return null
       }
     } catch (e) {
-      // 若需要区分错误类型，可在此检查 e.response.status，并返回更细的信息
+      const status = e.response?.status
+    if (status === 401 || status === 403) {
+      // 认证失败，静默清除状态
       clearAuth()
       return null
+    }
+    // 其他错误才输出日志
+    console.error('fetchUser unexpected error:', status, e.message)
+    clearAuth()
+    return null
     }
   }
 

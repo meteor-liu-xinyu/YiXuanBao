@@ -83,8 +83,15 @@ const user = useUserStore()
 const isLoggedIn = computed(() => !!(user.username))
 
 onMounted(async () => {
-  if (typeof user.fetchUser === 'function') {
-    try { await user.fetchUser() } catch (e) { /* ignore */ }
+  if (user.isAuthenticated && typeof user.fetchUser === 'function') {
+    try { 
+      await user.fetchUser() 
+    } catch (e) { 
+      // 如果失败，清空认证状态
+      if (e.response?.status === 401 || e.response?.status === 403) {
+        user.clearAuth()
+      }
+    }
   }
 })
 
