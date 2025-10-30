@@ -36,7 +36,7 @@
 
         <div class="features">
           <div class="feature-row">
-            <el-col :span="8" class="feature-col">
+            <el-col :xs="24" :sm="24" :md="8" class="feature-col">
               <el-card class="feature-card" shadow="hover">
                 <div class="card-inner">
                   <h3>个性化档案</h3>
@@ -45,7 +45,7 @@
               </el-card>
             </el-col>
 
-            <el-col :span="8" class="feature-col">
+            <el-col :xs="24" :sm="24" :md="8" class="feature-col">
               <el-card class="feature-card" shadow="hover">
                 <div class="card-inner">
                   <h3>智能匹配医院</h3>
@@ -54,7 +54,7 @@
               </el-card>
             </el-col>
 
-            <el-col :span="8" class="feature-col">
+            <el-col :xs="24" :sm="24" :md="8" class="feature-col">
               <el-card class="feature-card" shadow="hover">
                 <div class="card-inner">
                   <h3>安全会话</h3>
@@ -102,17 +102,31 @@ function onHistoryClick() {
 </script>
 
 <style scoped>
-/* 保持原样式 */
 .site-main {
-  --center-max-width: 520px;
   padding: 48px 6% 80px;
   box-sizing: border-box;
 }
 
-.welcome-page { min-height: 100vh; background: linear-gradient(180deg,#f5f9ff 0,#eef6ff 100%); }
-.hero { text-align:center; margin-bottom: 36px; }
-.hero h2 { font-size:2rem; color:#114; margin-bottom:8px; }
-.lead { color:#3a5572; margin-bottom:18px; }
+.welcome-page { 
+  min-height: 100vh; 
+  background: linear-gradient(180deg,#f5f9ff 0,#eef6ff 100%); 
+}
+
+.hero { 
+  text-align:center; 
+  margin-bottom: 36px; 
+}
+
+.hero h2 { 
+  font-size:2rem; 
+  color:#114; 
+  margin-bottom:8px; 
+}
+
+.lead { 
+  color:#3a5572; 
+  margin-bottom:18px; 
+}
 
 .hero-buttons {
   display:flex;
@@ -135,34 +149,25 @@ function onHistoryClick() {
   justify-content: center;
 }
 
-@media (max-width: 768px) {
-  .hero-buttons {
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    padding: 0 20px;
-  }
-  .hero-buttons .el-button.cta {
-    width: 100%;
-    max-width: var(--center-max-width);
-    height: 48px;
-    line-height: 48px;
-    font-size: 16px;
-  }
+.features { 
+  max-width:1200px; 
+  margin:0 auto; 
+  padding-top: 20px; 
 }
 
-.features { max-width:1200px; margin:0 auto; padding-top: 20px; }
 .feature-row {
   display: flex;
   gap: 20px;
   align-items: stretch;
 }
+
 .feature-col {
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
   min-width: 0;
 }
+
 .feature-card {
   display: flex;
   flex-direction: column;
@@ -172,38 +177,112 @@ function onHistoryClick() {
   height: 100%;
   box-sizing: border-box;
 }
+
 .card-inner {
   display: flex;
   flex-direction: column;
   gap: 12px;
   flex: 1 1 auto;
 }
+
+.card-inner h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #1a3a52;
+  text-align: center;
+}
+
 .card-text {
   margin: 0;
   color: #475c6b;
   line-height: 1.6;
   text-align: center;
+  font-size: 0.95rem;
 }
 
+/* 移动端优化 */
 @media (max-width: 768px) {
+  .site-main {
+    padding: 32px 16px 60px;
+  }
+
+  .hero h2 {
+    font-size: 1.5rem;
+  }
+
+  .lead {
+    font-size: 0.95rem;
+    padding: 0 10px;
+  }
+
+  .hero-buttons {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 0 20px;
+  }
+
+  .hero-buttons .el-button.cta {
+    width: 100%;
+    height: 48px;
+    line-height: 48px;
+    font-size: 16px;
+  }
+
+  .features {
+    padding-top: 30px;
+  }
+
   .feature-row {
     flex-direction: column;
-    gap: 14px;
-    align-items: center;
+    gap: 16px;
   }
 
   .feature-col {
     width: 100%;
-    display: flex;
-    justify-content: center;
   }
 
   .feature-card {
     width: 100%;
-    max-width: var(--center-max-width);
-    height: auto;
+    padding: 24px 20px;
+  }
+
+  .card-inner h3 {
+    font-size: 1.15rem;
+  }
+
+  .card-text {
+    font-size: 0.9rem;
   }
 }
 
-.site-footer { text-align:center; padding:18px; color:#667; background:transparent; }
+/* 超小屏幕优化 */
+@media (max-width: 480px) {
+  .site-main {
+    padding: 24px 12px 50px;
+  }
+
+  .hero {
+    margin-bottom: 28px;
+  }
+
+  .hero h2 {
+    font-size: 1.35rem;
+  }
+
+  .hero-buttons {
+    padding: 0 10px;
+  }
+
+  .feature-card {
+    padding: 20px 16px;
+  }
+}
+
+.site-footer { 
+  text-align:center; 
+  padding:18px; 
+  color:#667; 
+  background:transparent; 
+}
 </style>
