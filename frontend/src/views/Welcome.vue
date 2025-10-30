@@ -217,16 +217,20 @@ function onHistoryClick() {
 
   .hero-buttons {
     flex-direction: column;
-    align-items: stretch;
+    align-items: center;
     gap: 12px;
     padding: 0 20px;
+    max-width: 100%;
   }
 
   .hero-buttons .el-button.cta {
     width: 100%;
+    max-width: 400px;
     height: 48px;
     line-height: 48px;
     font-size: 16px;
+    padding: 0 24px;
+    margin: 0;
   }
 
   .features {
@@ -271,7 +275,12 @@ function onHistoryClick() {
   }
 
   .hero-buttons {
-    padding: 0 10px;
+    padding: 0 16px;
+  }
+
+  .hero-buttons .el-button.cta {
+    max-width: 100%;
+    font-size: 15px;
   }
 
   .feature-card {
