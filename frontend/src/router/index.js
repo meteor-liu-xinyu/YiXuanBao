@@ -42,15 +42,14 @@ const routes = [
     component: Profile, 
     meta: { 
       hideUserMenu: true,
-      requiresAuth: true  // ⭐ 需要登录才能访问个人资料
+      requiresAuth: true
     } 
   },
   
-  // 推荐功能（可选：是否需要登录）
+  // 推荐功能
   { 
     path: '/recommend', 
     component: Recommend 
-    // 如果推荐功能需要登录，添加：meta: { requiresAuth: true }
   },
   { 
     path: '/result', 
@@ -62,7 +61,7 @@ const routes = [
     path: '/history', 
     name: 'History', 
     component: () => import('@/views/History.vue'),
-    meta: { requiresAuth: true }  // ⭐ 需要登录才能查看历史
+    meta: { requiresAuth: true }
   },
   
   // 管理员页面（需要管理员权限）
@@ -71,8 +70,8 @@ const routes = [
     component: Admin, 
     meta: { 
       hideUserMenu: true,
-      requiresAuth: true,    // ⭐ 需要登录
-      requiresAdmin: true    // ⭐ 需要管理员权限
+      requiresAuth: true,
+      requiresAdmin: true
     } 
   },
 
@@ -112,6 +111,14 @@ const allowedQueryKeysMap = {
 }
 
 router.beforeEach(async (to, from, next) => {
+  // ⭐ 排除后端路由，跳过 Vue Router，使用原生导航
+  const backendPaths = ['/django-admin', '/api', '/static', '/media'];
+  
+  if (backendPaths.some(path => to.path.startsWith(path))) {
+    window.location.href = to.fullPath;
+    return;
+  }
+
   const userStore = useUserStore()
 
   // 1. 查询参数验证
