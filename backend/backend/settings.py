@@ -21,16 +21,35 @@ else:
     else:
         print("⚠️ 未找到开发环境配置文件 backend/.env")
 
-# Security
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fallback-key')
-DEBUG = os.getenv('DEBUG', 'False').lower() in ('1', 'true', 'yes')
+# ⭐ 自动检测环境类型
+ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')  # development, production, staging
+IS_PRODUCTION = ENVIRONMENT == 'production'
+IS_DEVELOPMENT = ENVIRONMENT == 'development'
 
-# ALLOWED_HOSTS can be a comma-separated list in the env var
-_allowed = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost')
-ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
+print(f"🚀 当前运行环境: {ENVIRONMENT}")
+
+# Security
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fallback-key-change-in-production')
+
+# ⭐ 根据环境自动设置 DEBUG
+if IS_PRODUCTION:
+    DEBUG = False
+    print("⚙️ 生产模式: DEBUG=False")
+else:
+    DEBUG = os.getenv('DEBUG', 'True').lower() in ('1', 'true', 'yes')
+    print(f"⚙️ 开发模式: DEBUG={DEBUG}")
+
+# ⭐ ALLOWED_HOSTS 根据环境自动配置
+if IS_DEVELOPMENT:
+    ALLOWED_HOSTS = ['*']  # 开发环境允许所有
+    print("⚙️ 开发模式: ALLOWED_HOSTS=['*']")
+else:
+    # 生产环境从环境变量读取
+    _allowed = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost')
+    ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
+    print(f"⚙️ 生产模式: ALLOWED_HOSTS={ALLOWED_HOSTS}")
 
 # Application definition
-
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -70,6 +89,7 @@ TEMPLATES = [
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
+                "django.template.context_processors.debug",
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
@@ -108,13 +128,9 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
-LANGUAGE_CODE = "en-us"
-
-TIME_ZONE = "UTC"
-
+LANGUAGE_CODE = "zh-hans"  # 改为中文
+TIME_ZONE = "Asia/Shanghai"  # 改为中国时区
 USE_I18N = True
-
 USE_TZ = True
 
 STATIC_URL = "static/"
@@ -128,26 +144,94 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.AllowAny',  # ⭐ 允许未认证用户访问
     )
 }
 
-# CORS & CSRF - allow list can be configured via env
-_cors = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173')
-CORS_ALLOWED_ORIGINS = [u.strip() for u in _cors.split(',') if u.strip()]
+# ⭐ CORS 配置 - 根据环境自动选择
+if IS_DEVELOPMENT:
+    # 开发环境：允许所有源
+    CORS_ALLOW_ALL_ORIGINS = True
+    CORS_ALLOWED_ORIGINS = []
+    print("⚙️ 开发模式: CORS_ALLOW_ALL_ORIGINS=True")
+else:
+    # 生产环境：只允许指定源
+    CORS_ALLOW_ALL_ORIGINS = False
+    _cors = os.getenv('CORS_ALLOWED_ORIGINS', 'http://8.137.164.174')
+    CORS_ALLOWED_ORIGINS = [c.strip() for c in _cors.split(',') if c.strip()]
+    print(f"⚙️ 生产模式: CORS_ALLOWED_ORIGINS={CORS_ALLOWED_ORIGINS}")
 
-CSRF_TRUSTED_ORIGINS = [u.strip() for u in os.getenv('CSRF_TRUSTED_ORIGINS', 'http://localhost:5173').split(',') if u.strip()]
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# ⭐ CSRF 配置 - 根据环境自动选择
+if IS_DEVELOPMENT:
+    # 开发环境：宽松的 CSRF 设置
+    CSRF_TRUSTED_ORIGINS = [
+        'http://localhost:5173',
+        'http://localhost:8080',
+        'http://localhost',
+        'http://127.0.0.1',
+    ]
+else:
+    # 生产环境：从环境变量读取
+    _csrf = os.getenv('CSRF_TRUSTED_ORIGINS', 'http://8.137.164.174')
+    CSRF_TRUSTED_ORIGINS = [u.strip() for u in _csrf.split(',') if u.strip()]
+
+print(f"⚙️ CSRF_TRUSTED_ORIGINS={CSRF_TRUSTED_ORIGINS}")
+
+# ⭐ Cookie 配置 - 根据环境自动选择
+if IS_PRODUCTION:
+    # 生产环境：安全的 Cookie 设置（如果使用 HTTPS）
+    SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'False').lower() in ('1', 'true', 'yes')
+    CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'False').lower() in ('1', 'true', 'yes')
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    SESSION_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_HTTPONLY = False  # JS 需要读取
+else:
+    # 开发环境：宽松的 Cookie 设置
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    SESSION_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_HTTPONLY = False
+
+CSRF_COOKIE_NAME = "csrftoken"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Development-friendly cookie settings; change for production
-CORS_ALLOW_CREDENTIALS = True
-# If you want to allow all origins (not recommended in production), set via env:
-if os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('1', 'true', 'yes'):
-    CORS_ALLOW_ALL_ORIGINS = True
-
-CSRF_COOKIE_NAME = "csrftoken"
-SESSION_COOKIE_SAMESITE = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
-SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'False').lower() in ('1', 'true', 'yes')
-CSRF_COOKIE_SAMESITE = os.getenv('CSRF_COOKIE_SAMESITE', 'Lax')
-CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'False').lower() in ('1', 'true', 'yes')
+# ⭐ 日志配置
+if DEBUG:
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+            },
+        },
+        'root': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+    }

@@ -50,3 +50,4 @@ frontend/dist/
 .idea/
 *.swp
 /docker-compose.local.yml
+/common_command.txt

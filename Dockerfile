@@ -5,6 +5,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app/backend
 
+# 服务器上开启
+# RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list \
+#    && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list
+
 # 安装系统依赖
 RUN apt-get update && apt-get install -y \
     gcc \

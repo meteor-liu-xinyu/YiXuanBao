@@ -24,7 +24,7 @@ admin.site.index_title = "欢迎来到 YiXuanBao 管理后台"
 
 urlpatterns = [
     path("django-admin/", admin.site.urls),
-    path("admin/", admin.site.urls),
+    
     path('api/', api_root),
     path('api/accounts/', include('accounts.urls')),
     path('api/hospital/', include('hospital.urls')),
