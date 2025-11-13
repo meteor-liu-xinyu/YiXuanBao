@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "axios": "^1.12.2",
+    "coordtransform": "^2.1.2",
     "cropperjs": "^1.5.13",
     "element-plus": "^2.11.5",
     "js-cookie": "^3.0.5",

@@ -198,6 +198,59 @@ else:
 
 print(f"⚙️ CSRF_TRUSTED_ORIGINS={CSRF_TRUSTED_ORIGINS}")
 
+AMAP_SERVER_KEY = os.environ.get('AMAP_SERVER_KEY', '')
+AMAP_JS_KEY = os.environ.get('VITE_AMAP_JS_KEY', '')
+REDIS_URL = os.environ.get('REDIS_URL')
+
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/1')
+
+if IS_DEVELOPMENT:
+    # 开发环境：如果你没有运行 redis，使用本地内存缓存，避免 500 错误。
+    # 如果你确实运行了 redis（并把 REDIS_URL 指向它），你也可以保持 django_redis config.
+    try:
+        # If REDIS_URL seems to point to localhost/127.0.0.1 or to a reachable host, use django_redis with IGNORE_EXCEPTIONS
+        if 'redis' in REDIS_URL:
+            CACHES = {
+                "default": {
+                    "BACKEND": "django_redis.cache.RedisCache",
+                    "LOCATION": REDIS_URL,
+                    "OPTIONS": {
+                        "CLIENT_CLASS": "django_redis.client.DefaultClient",
+                        # IMPORTANT: do not raise on redis errors in dev — behave like memcached client
+                        "IGNORE_EXCEPTIONS": True,
+                    }
+                }
+            }
+        else:
+            # fallback to local memory cache
+            CACHES = {
+                "default": {
+                    "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                    "LOCATION": "unique-snowflake",
+                }
+            }
+    except Exception:
+        # if any config error, fallback to locmem
+        CACHES = {
+            "default": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                "LOCATION": "unique-snowflake",
+            }
+        }
+else:
+    # Production: expect REDIS_URL is properly configured; use django_redis and ignore exceptions as safety
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": REDIS_URL,
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+                "IGNORE_EXCEPTIONS": True,  # tolerate transient redis failures
+            }
+        }
+    }
+
+
 # ⭐ Cookie 配置 - 根据环境自动选择
 if IS_PRODUCTION:
     # 生产环境：安全的 Cookie 设置（如果使用 HTTPS）

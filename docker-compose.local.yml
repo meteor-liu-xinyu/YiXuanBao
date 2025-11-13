@@ -24,6 +24,22 @@ services:
       retries: 10
       interval: 10s
 
+  redis:
+    image: redis:7-alpine
+    container_name: yxbao_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: .
@@ -33,17 +49,24 @@ services:
     volumes:
       - static_volume:/app/backend/staticfiles
       - media_volume:/app/backend/media
-    # 可选：如果不需要直接访问后端，可以注释掉
     ports:
       - "8000:8000"
     environment:
-      - ENV_FILE=/app/.env.production
+      - ENV_FILE=/app/.env.production.local
       - ENVIRONMENT=production
+      # 建议显式提供 DB/Redis 相关 env（也可从 .env.production 读取）
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=yxbao_db
+      - DB_USER=yxbao_user
+      - DB_PASSWORD=${DB_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - REDIS_URL=redis://redis:6379/1
     env_file:
-      - .env.production
+      - .env.production.local
     depends_on:
-      db:
-        condition: service_healthy
+      - db
+      - redis
     networks:
       - default
 
@@ -67,6 +90,7 @@ volumes:
   mysql_data:
   static_volume:
   media_volume:
+  redis_data:
 
 networks:
   default:
